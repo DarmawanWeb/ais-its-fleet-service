@@ -1,0 +1,4015 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v2/fleet/methodology": {
+      "get": {
+        "operationId": "MethodologyController_describe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodologyDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Methods implemented by this service, with their sources",
+        "tags": [
+          "methodology"
+        ]
+      }
+    },
+    "/api/v2/vessels": {
+      "get": {
+        "description": "Identity fields for every vessel (`view: summary`); technical fields only for vessels of the active organization (`view: detail`).",
+        "operationId": "VesselsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Name (case-insensitive substring), MMSI or IMO number (prefix of digits)",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          {
+            "name": "typeCode",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+              "example": "roro_passenger",
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "required": false,
+            "in": "query",
+            "description": "Owning organization (platform administrators: any; others: their own)",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive",
+                "laid_up"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/VesselDetailDto"
+                          },
+                          {
+                            "$ref": "#/components/schemas/VesselSummaryDto"
+                          }
+                        ],
+                        "discriminator": {
+                          "propertyName": "view",
+                          "mapping": {
+                            "detail": "#/components/schemas/VesselDetailDto",
+                            "summary": "#/components/schemas/VesselSummaryDto"
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List vessels",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "post": {
+        "description": "Platform administrators may set `orgId`. Publishes fleet.vessel.upserted.v1.",
+        "operationId": "VesselsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVesselDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Register a vessel in the active organization",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      }
+    },
+    "/api/v2/vessels/by-mmsi/{mmsi}": {
+      "get": {
+        "operationId": "VesselsController_getByMmsi",
+        "parameters": [
+          {
+            "name": "mmsi",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "example": 525005223,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/VesselDetailDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VesselSummaryDto"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "view",
+                    "mapping": {
+                      "detail": "#/components/schemas/VesselDetailDto",
+                      "summary": "#/components/schemas/VesselSummaryDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a vessel by MMSI",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      }
+    },
+    "/api/v2/vessels/{id}": {
+      "get": {
+        "operationId": "VesselsController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/VesselDetailDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VesselSummaryDto"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "view",
+                    "mapping": {
+                      "detail": "#/components/schemas/VesselDetailDto",
+                      "summary": "#/components/schemas/VesselSummaryDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a vessel",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "patch": {
+        "operationId": "VesselsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVesselDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change identity, status, voyage share or references of a vessel",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      },
+      "delete": {
+        "operationId": "VesselsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete a vessel (publishes fleet.vessel.deleted.v1)",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      }
+    },
+    "/api/v2/vessels/{id}/dimensions": {
+      "put": {
+        "operationId": "VesselsController_replaceDimensions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VesselDimensionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Replace the dimensions and hull coefficients",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      }
+    },
+    "/api/v2/vessels/{id}/engines": {
+      "put": {
+        "description": "At most one main-engine row; each engine once per role (identical engines: quantity); the role must equal the catalogue kind.",
+        "operationId": "VesselsController_replaceEngines",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/VesselEngineInputDto"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Replace the fitted engines",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      }
+    },
+    "/api/v2/vessels/{id}/ports": {
+      "put": {
+        "operationId": "VesselsController_replacePorts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maxItems": 50,
+                "uniqueItems": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Replace the ports of call (ordered port ids)",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      }
+    },
+    "/api/v2/vessels/{id}/photo": {
+      "post": {
+        "description": "JPEG, PNG or WebP (recognized by content), at most 5242880 bytes; replaces the previous photo.",
+        "operationId": "VesselsController_uploadPhoto",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Upload the vessel photo",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      },
+      "delete": {
+        "operationId": "VesselsController_removePhoto",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete the vessel photo (removes the stored object)",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      }
+    },
+    "/api/v2/vessels/{id}/republish": {
+      "post": {
+        "description": "Requires super_admin (403 PLATFORM_ADMIN_REQUIRED otherwise).",
+        "operationId": "VesselsController_republish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepublishResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Re-enqueue the snapshot of a vessel (platform administrators)",
+        "tags": [
+          "vessels"
+        ],
+        "x-required-permissions": [
+          "vessel:write"
+        ]
+      }
+    },
+    "/api/v2/vessel-types": {
+      "get": {
+        "operationId": "VesselTypesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive substring of the name or code",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VesselTypeDto"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List ship types (CII reference line and rating vector)",
+        "tags": [
+          "vessel-types"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "post": {
+        "operationId": "VesselTypesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVesselTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a ship type",
+        "tags": [
+          "vessel-types"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/vessel-types/{id}": {
+      "get": {
+        "operationId": "VesselTypesController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a ship type",
+        "tags": [
+          "vessel-types"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "patch": {
+        "description": "Republishes the snapshot of every vessel of the type (fleet.vessel.upserted.v1).",
+        "operationId": "VesselTypesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVesselTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesselTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change a ship type",
+        "tags": [
+          "vessel-types"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      },
+      "delete": {
+        "operationId": "VesselTypesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete an unused ship type (409 REFERENCE_IN_USE otherwise)",
+        "tags": [
+          "vessel-types"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/fuels": {
+      "get": {
+        "operationId": "FuelsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive substring of the name or code",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FuelDto"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List fuels (Cf, carbon content, density)",
+        "tags": [
+          "fuels"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "post": {
+        "operationId": "FuelsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFuelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FuelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a fuel",
+        "tags": [
+          "fuels"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/fuels/{id}": {
+      "get": {
+        "operationId": "FuelsController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FuelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a fuel",
+        "tags": [
+          "fuels"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "patch": {
+        "description": "Republishes the snapshot of every vessel burning the fuel (fleet.vessel.upserted.v1).",
+        "operationId": "FuelsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFuelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FuelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change a fuel",
+        "tags": [
+          "fuels"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      },
+      "delete": {
+        "operationId": "FuelsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete an unused fuel (409 REFERENCE_IN_USE otherwise)",
+        "tags": [
+          "fuels"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/engines": {
+      "get": {
+        "operationId": "EnginesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive substring of the name or code",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "main",
+                "auxiliary"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/EngineDto"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List engines (main or auxiliary)",
+        "tags": [
+          "engines"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "post": {
+        "operationId": "EnginesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEngineDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create an engine",
+        "tags": [
+          "engines"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/engines/{id}": {
+      "get": {
+        "operationId": "EnginesController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get an engine",
+        "tags": [
+          "engines"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "patch": {
+        "description": "Republishes the snapshot of every vessel the engine is fitted to (fleet.vessel.upserted.v1); the kind of an engine in use cannot change.",
+        "operationId": "EnginesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEngineDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change an engine",
+        "tags": [
+          "engines"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      },
+      "delete": {
+        "operationId": "EnginesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete an unused engine (409 REFERENCE_IN_USE otherwise)",
+        "tags": [
+          "engines"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/fuel-formulas": {
+      "get": {
+        "operationId": "FuelFormulasController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive substring of the name or code",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FuelFormulaDto"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List first fuel formulas",
+        "tags": [
+          "fuel-formulas"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "post": {
+        "operationId": "FuelFormulasController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFuelFormulaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FuelFormulaDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a first fuel formula (strings validated against the safe grammar)",
+        "tags": [
+          "fuel-formulas"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/fuel-formulas/{id}": {
+      "get": {
+        "operationId": "FuelFormulasController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FuelFormulaDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a first fuel formula",
+        "tags": [
+          "fuel-formulas"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "patch": {
+        "description": "Republishes the snapshot of every vessel using the formula (fleet.vessel.upserted.v1).",
+        "operationId": "FuelFormulasController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFuelFormulaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FuelFormulaDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change a first fuel formula",
+        "tags": [
+          "fuel-formulas"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      },
+      "delete": {
+        "operationId": "FuelFormulasController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete an unused first fuel formula (409 REFERENCE_IN_USE otherwise)",
+        "tags": [
+          "fuel-formulas"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/ports": {
+      "get": {
+        "operationId": "PortsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive substring of the name or code",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          {
+            "name": "bbox",
+            "required": false,
+            "in": "query",
+            "description": "minLon,minLat,maxLon,maxLat (WGS 84 degrees)",
+            "schema": {
+              "example": "95,-11,141,6",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PortDto"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List ports (optionally inside a bbox)",
+        "tags": [
+          "ports"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "post": {
+        "operationId": "PortsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePortDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a port",
+        "tags": [
+          "ports"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/ports/{id}": {
+      "get": {
+        "operationId": "PortsController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a port",
+        "tags": [
+          "ports"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      },
+      "patch": {
+        "operationId": "PortsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePortDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change a port",
+        "tags": [
+          "ports"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      },
+      "delete": {
+        "operationId": "PortsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete a port no vessel calls at (409 REFERENCE_IN_USE otherwise)",
+        "tags": [
+          "ports"
+        ],
+        "x-required-permissions": [
+          "reference:write"
+        ]
+      }
+    },
+    "/api/v2/registry/search": {
+      "get": {
+        "operationId": "RegistryController_search",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Name (prefix; substring from 3 characters), IMO number or MMSI (prefix of digits)",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 100,
+              "example": "dharma",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RegistryParticularsDto"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search registry particulars by name, IMO number or MMSI",
+        "tags": [
+          "registry"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      }
+    },
+    "/api/v2/registry/{imoOrMmsi}": {
+      "get": {
+        "operationId": "RegistryController_get",
+        "parameters": [
+          {
+            "name": "imoOrMmsi",
+            "required": true,
+            "in": "path",
+            "description": "MMSI (9 digits) or IMO number (7 digits, optionally prefixed with IMO)",
+            "schema": {
+              "example": "525005223",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryParticularsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Registry particulars of an MMSI or IMO number",
+        "tags": [
+          "registry"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "AIS Maritime Intelligence — AIS ITS Fleet Service",
+    "description": "Vessel master data and reference data (vessel types, fuels, engines, fuel formulas, ports, registry); publishes VesselSnapshotV1 to the FLEET stream",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "methodology",
+      "description": "Methods of the methodology catalog implemented here"
+    },
+    {
+      "name": "vessels",
+      "description": "Vessels: identity for every tenant, technical data for the owning organization (spec §8.5)"
+    },
+    {
+      "name": "vessel-types",
+      "description": "Ship types with CII reference lines (MEPC.353(78)) and rating vectors (MEPC.354(78))"
+    },
+    {
+      "name": "fuels",
+      "description": "Fuels with CO2 conversion factors Cf (MEPC.364(79)) and densities"
+    },
+    {
+      "name": "engines",
+      "description": "Main and auxiliary engine catalogue"
+    },
+    {
+      "name": "fuel-formulas",
+      "description": "First fuel formulas (safe expressions of speedKnot)"
+    },
+    {
+      "name": "ports",
+      "description": "Ports of call (GeoJSON points)"
+    },
+    {
+      "name": "registry",
+      "description": "Registry particulars of ships (legacy secondary ship data)"
+    }
+  ],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "Access token (EdDSA JWT)"
+      },
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key sk_<id>_<secret>"
+      },
+      "internalToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Internal-Token",
+        "description": "Service-to-service token"
+      }
+    },
+    "schemas": {
+      "LocalizedTextDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Bahasa Indonesia"
+          },
+          "en": {
+            "type": "string",
+            "description": "English"
+          }
+        },
+        "required": [
+          "id",
+          "en"
+        ]
+      },
+      "MethodReferenceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "imo-mepc-352-78"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "url"
+        ]
+      },
+      "MethodSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "cii.attained"
+          },
+          "catalogued": {
+            "type": "boolean",
+            "description": "Whether the catalog shipped with @darmawanweb/ais-its-contracts describes the method"
+          },
+          "domain": {
+            "type": "string",
+            "enum": [
+              "ais",
+              "emission",
+              "seemp",
+              "telemetry",
+              "geo",
+              "safety",
+              "surveillance"
+            ],
+            "nullable": true
+          },
+          "name": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedTextDto"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "implemented",
+              "planned",
+              "deprecated"
+            ],
+            "nullable": true
+          },
+          "needsCitation": {
+            "type": "boolean",
+            "description": "Values come from the thesis without a verified external source"
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MethodReferenceDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "catalogued",
+          "domain",
+          "name",
+          "status",
+          "needsCitation",
+          "references"
+        ]
+      },
+      "MethodologyDto": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "example": "fleet"
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MethodSummaryDto"
+            }
+          }
+        },
+        "required": [
+          "service",
+          "methods"
+        ]
+      },
+      "VesselTypeSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "roro_passenger"
+          },
+          "name": {
+            "type": "string",
+            "example": "Ro-ro passenger ship"
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true,
+            "example": "ro-rop"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "icon"
+        ]
+      },
+      "VesselSummaryDto": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "detail"
+            ],
+            "description": "`summary`: identity only; `detail`: with technical data (own organization)"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mmsi": {
+            "type": "number",
+            "example": 525005223
+          },
+          "imo": {
+            "type": "string",
+            "nullable": true,
+            "example": "9037941"
+          },
+          "name": {
+            "type": "string",
+            "example": "Dharma Ferry VIII"
+          },
+          "flag": {
+            "type": "string",
+            "nullable": true,
+            "example": "ID"
+          },
+          "type": {
+            "$ref": "#/components/schemas/VesselTypeSummaryDto"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "laid_up"
+            ]
+          },
+          "photoUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Presigned GET URL of the photo, valid 1 h"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "view",
+          "id",
+          "mmsi",
+          "imo",
+          "name",
+          "flag",
+          "type",
+          "status",
+          "photoUrl",
+          "updatedAt"
+        ]
+      },
+      "DdVectorDto": {
+        "type": "object",
+        "properties": {
+          "d1": {
+            "type": "number",
+            "example": 0.76,
+            "description": "Superior / lower boundary (A|B)"
+          },
+          "d2": {
+            "type": "number",
+            "example": 0.92,
+            "description": "Lower / upper boundary (B|C)"
+          },
+          "d3": {
+            "type": "number",
+            "example": 1.14,
+            "description": "Upper / inferior boundary (C|D)"
+          },
+          "d4": {
+            "type": "number",
+            "example": 1.3,
+            "description": "Inferior boundary (D|E)"
+          }
+        },
+        "required": [
+          "d1",
+          "d2",
+          "d3",
+          "d4"
+        ]
+      },
+      "VesselTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "roro_passenger"
+          },
+          "name": {
+            "type": "string",
+            "example": "Ro-ro passenger ship"
+          },
+          "capacityUnit": {
+            "type": "string",
+            "enum": [
+              "DWT",
+              "GT"
+            ]
+          },
+          "a": {
+            "type": "number",
+            "example": 2023
+          },
+          "c": {
+            "type": "number",
+            "example": 0.46
+          },
+          "capacityFixed": {
+            "type": "number",
+            "nullable": true,
+            "example": null
+          },
+          "d": {
+            "$ref": "#/components/schemas/DdVectorDto"
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "bulkca",
+              "combin",
+              "contai",
+              "cruise",
+              "gascar",
+              "genera",
+              "lngcar",
+              "refrig",
+              "ro-roc",
+              "ro-rop",
+              "ro-rov",
+              "tanker",
+              "unknown"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "capacityUnit",
+          "a",
+          "c",
+          "capacityFixed",
+          "d",
+          "icon",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "VesselDimensionsDto": {
+        "type": "object",
+        "properties": {
+          "capacity": {
+            "type": "number",
+            "example": 2877,
+            "description": "CII capacity: DWT or GT according to the ship type capacityUnit"
+          },
+          "dwt": {
+            "type": "number",
+            "nullable": true,
+            "description": "Deadweight, t"
+          },
+          "gt": {
+            "type": "number",
+            "nullable": true,
+            "example": 2877,
+            "description": "Gross tonnage"
+          },
+          "cb": {
+            "type": "number",
+            "example": 0.644818,
+            "description": "Block coefficient C_B"
+          },
+          "lwl": {
+            "type": "number",
+            "example": 69.72,
+            "description": "Length on waterline L_WL, m"
+          },
+          "b": {
+            "type": "number",
+            "example": 16.3,
+            "description": "Moulded breadth B, m"
+          },
+          "t": {
+            "type": "number",
+            "example": 4.1,
+            "description": "Draught T, m"
+          },
+          "cwp": {
+            "type": "number",
+            "example": 0.753,
+            "description": "Waterplane area coefficient C_WP"
+          },
+          "loa": {
+            "type": "number",
+            "example": 73.3,
+            "description": "Length overall LOA, m"
+          },
+          "lpp": {
+            "type": "number",
+            "example": 66.4,
+            "description": "Length between perpendiculars L_PP, m"
+          },
+          "cp": {
+            "type": "number",
+            "example": 0.673,
+            "description": "Prismatic coefficient C_P"
+          },
+          "cm": {
+            "type": "number",
+            "example": 0.9806,
+            "description": "Midship section coefficient C_M"
+          },
+          "cbnsp": {
+            "type": "number",
+            "example": 0.661,
+            "description": "Second block coefficient of the legacy displacement L_m·B·T·C_bnsp·1.025"
+          },
+          "bulbousBow": {
+            "type": "boolean",
+            "example": false,
+            "description": "Bulbous bow fitted (legacy bulbosbow)"
+          },
+          "cstern": {
+            "type": "number",
+            "example": 8,
+            "description": "Holtrop stern shape coefficient C_stern"
+          },
+          "c1": {
+            "type": "number",
+            "example": 1,
+            "description": "Rudder-area rule factor c1 (ship type)"
+          },
+          "c2": {
+            "type": "number",
+            "example": 1,
+            "description": "Rudder-area rule factor c2 (rudder type)"
+          },
+          "c3": {
+            "type": "number",
+            "example": 1,
+            "description": "Rudder-area rule factor c3 (profile; legacy Holtrop bulb coefficient)"
+          },
+          "c5": {
+            "type": "number",
+            "example": 1.5,
+            "description": "Rudder arrangement factor (rule c4)"
+          },
+          "vs": {
+            "type": "number",
+            "example": 12,
+            "description": "Service speed V_S, kn"
+          }
+        },
+        "required": [
+          "capacity",
+          "cb",
+          "lwl",
+          "b",
+          "t",
+          "cwp",
+          "loa",
+          "lpp",
+          "cp",
+          "cm",
+          "cbnsp",
+          "bulbousBow",
+          "cstern",
+          "c1",
+          "c2",
+          "c3",
+          "c5",
+          "vs"
+        ]
+      },
+      "FuelDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "diesel_gas_oil"
+          },
+          "name": {
+            "type": "string",
+            "example": "Diesel/Gas Oil"
+          },
+          "carbonContent": {
+            "type": "number",
+            "example": 0.8744
+          },
+          "conversionFactor": {
+            "type": "number",
+            "example": 3.206
+          },
+          "density": {
+            "type": "number",
+            "example": 0.86
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "carbonContent",
+          "conversionFactor",
+          "density",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "FuelFormulaDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "example": "Dharma Ferry VIII regression"
+          },
+          "mainEngineFormula": {
+            "type": "string",
+            "example": "-0.0382 * speedKnot ** 2 + 0.8658 * speedKnot - 0.0197"
+          },
+          "auxiliaryEngineFormula": {
+            "type": "string",
+            "example": "1.5103 * Math.exp(-0.064 * speedKnot)"
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "mainEngineFormula",
+          "auxiliaryEngineFormula",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "EngineDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true,
+            "example": "niigata_6m28bet"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "main",
+              "auxiliary"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "example": "NIIGATA 6M28BET"
+          },
+          "rpm": {
+            "type": "number",
+            "example": 390,
+            "description": "rpm"
+          },
+          "powerKw": {
+            "type": "number",
+            "example": 2100,
+            "description": "kW"
+          },
+          "sfoc": {
+            "type": "number",
+            "example": 179.2,
+            "description": "g/kWh"
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "kind",
+          "name",
+          "rpm",
+          "powerKw",
+          "sfoc",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "VesselEngineDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "main",
+              "auxiliary"
+            ]
+          },
+          "quantity": {
+            "type": "number",
+            "example": 2,
+            "description": "Number of identical engines"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineDto"
+          }
+        },
+        "required": [
+          "role",
+          "quantity",
+          "engine"
+        ]
+      },
+      "VesselPortDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "PBI"
+          },
+          "name": {
+            "type": "string",
+            "example": "Padang Bai"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ]
+      },
+      "VesselDetailDto": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "detail"
+            ],
+            "description": "`summary`: identity only; `detail`: with technical data (own organization)"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mmsi": {
+            "type": "number",
+            "example": 525005223
+          },
+          "imo": {
+            "type": "string",
+            "nullable": true,
+            "example": "9037941"
+          },
+          "name": {
+            "type": "string",
+            "example": "Dharma Ferry VIII"
+          },
+          "flag": {
+            "type": "string",
+            "nullable": true,
+            "example": "ID"
+          },
+          "type": {
+            "description": "Ship type with its CII parameters",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VesselTypeDto"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "laid_up"
+            ]
+          },
+          "photoUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Presigned GET URL of the photo, valid 1 h"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Owning organization"
+          },
+          "builtYear": {
+            "type": "number",
+            "nullable": true,
+            "example": 1990
+          },
+          "annualVoyagePercentage": {
+            "type": "number",
+            "example": 41.6666666666667,
+            "description": "Share of the year at sea, percent"
+          },
+          "dimensions": {
+            "$ref": "#/components/schemas/VesselDimensionsDto"
+          },
+          "fuel": {
+            "$ref": "#/components/schemas/FuelDto"
+          },
+          "firstFuelFormula": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FuelFormulaDto"
+              }
+            ]
+          },
+          "engines": {
+            "description": "Main engine first, then auxiliaries",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VesselEngineDto"
+            }
+          },
+          "ports": {
+            "description": "Ports of call, in order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VesselPortDto"
+            }
+          },
+          "legacyId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Id of the legacy MVP document"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "view",
+          "id",
+          "mmsi",
+          "imo",
+          "name",
+          "flag",
+          "type",
+          "status",
+          "photoUrl",
+          "updatedAt",
+          "orgId",
+          "builtYear",
+          "annualVoyagePercentage",
+          "dimensions",
+          "fuel",
+          "firstFuelFormula",
+          "engines",
+          "ports",
+          "legacyId",
+          "createdAt"
+        ]
+      },
+      "PageMetaDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items across all pages"
+          }
+        },
+        "required": [
+          "page",
+          "pageSize",
+          "total"
+        ]
+      },
+      "VesselEngineInputDto": {
+        "type": "object",
+        "properties": {
+          "engineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "main",
+              "auxiliary"
+            ],
+            "description": "Role on board; must equal the catalogue kind of the engine"
+          },
+          "quantity": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1,
+            "maximum": 64,
+            "description": "Number of identical engines"
+          }
+        },
+        "required": [
+          "engineId",
+          "role",
+          "quantity"
+        ]
+      },
+      "CreateVesselDto": {
+        "type": "object",
+        "properties": {
+          "mmsi": {
+            "type": "number",
+            "example": 525005223,
+            "minimum": 100000000,
+            "maximum": 999999999
+          },
+          "imo": {
+            "type": "string",
+            "nullable": true,
+            "example": "9037941",
+            "pattern": "^\\d{7}$"
+          },
+          "name": {
+            "type": "string",
+            "example": "Dharma Ferry VIII",
+            "maxLength": 120
+          },
+          "flag": {
+            "type": "string",
+            "nullable": true,
+            "example": "ID",
+            "pattern": "^[A-Z]{2}$",
+            "description": "Flag state, ISO 3166-1 alpha-2"
+          },
+          "builtYear": {
+            "type": "number",
+            "nullable": true,
+            "example": 1990,
+            "minimum": 1800,
+            "maximum": 2200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "laid_up"
+            ],
+            "default": "active"
+          },
+          "annualVoyagePercentage": {
+            "type": "number",
+            "example": 41.6666666666667,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Share of the year at sea, percent (SEEMP)"
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Ship type (CII reference line)"
+          },
+          "fuelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "firstFuelFormulaId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "dimensions": {
+            "$ref": "#/components/schemas/VesselDimensionsDto"
+          },
+          "engines": {
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VesselEngineInputDto"
+            }
+          },
+          "portIds": {
+            "maxItems": 50,
+            "uniqueItems": true,
+            "description": "Ports of call, in order",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Owning organization — platform administrators only (default: the active organization)"
+          },
+          "legacyId": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Id of the legacy MVP document — platform administrators only (data migration)"
+          }
+        },
+        "required": [
+          "mmsi",
+          "name",
+          "annualVoyagePercentage",
+          "typeId",
+          "fuelId",
+          "dimensions"
+        ]
+      },
+      "UpdateVesselDto": {
+        "type": "object",
+        "properties": {
+          "mmsi": {
+            "type": "number",
+            "example": 525005223,
+            "minimum": 100000000,
+            "maximum": 999999999
+          },
+          "imo": {
+            "type": "string",
+            "nullable": true,
+            "example": "9037941",
+            "pattern": "^\\d{7}$"
+          },
+          "name": {
+            "type": "string",
+            "example": "Dharma Ferry VIII",
+            "maxLength": 120
+          },
+          "flag": {
+            "type": "string",
+            "nullable": true,
+            "example": "ID",
+            "pattern": "^[A-Z]{2}$",
+            "description": "Flag state, ISO 3166-1 alpha-2"
+          },
+          "builtYear": {
+            "type": "number",
+            "nullable": true,
+            "example": 1990,
+            "minimum": 1800,
+            "maximum": 2200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "laid_up"
+            ],
+            "default": "active"
+          },
+          "annualVoyagePercentage": {
+            "type": "number",
+            "example": 41.6666666666667,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Share of the year at sea, percent (SEEMP)"
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Ship type (CII reference line)"
+          },
+          "fuelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "firstFuelFormulaId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Owning organization — platform administrators only (default: the active organization)"
+          }
+        }
+      },
+      "RepublishResultDto": {
+        "type": "object",
+        "properties": {
+          "vesselId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enqueued": {
+            "type": "number",
+            "example": 1,
+            "description": "Snapshots written to the outbox"
+          }
+        },
+        "required": [
+          "vesselId",
+          "enqueued"
+        ]
+      },
+      "CreateVesselTypeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "roro_passenger",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64,
+            "description": "Stable unique code (lowercase snake case)"
+          },
+          "name": {
+            "type": "string",
+            "example": "Ro-ro passenger ship",
+            "maxLength": 120
+          },
+          "capacityUnit": {
+            "type": "string",
+            "enum": [
+              "DWT",
+              "GT"
+            ],
+            "description": "Capacity of the CII reference line: deadweight or gross tonnage"
+          },
+          "a": {
+            "type": "number",
+            "example": 2023,
+            "description": "Reference line parameter a (CII_ref = a · Capacity^-c)"
+          },
+          "c": {
+            "type": "number",
+            "example": 0.46,
+            "description": "Reference line exponent c"
+          },
+          "capacityFixed": {
+            "type": "object",
+            "example": 279000,
+            "nullable": true,
+            "description": "Regulation-fixed capacity of the size band (MEPC.353(78)); the CII uses it instead of the vessel capacity when set"
+          },
+          "d": {
+            "$ref": "#/components/schemas/DdVectorDto"
+          },
+          "icon": {
+            "type": "string",
+            "enum": [
+              "bulkca",
+              "combin",
+              "contai",
+              "cruise",
+              "gascar",
+              "genera",
+              "lngcar",
+              "refrig",
+              "ro-roc",
+              "ro-rop",
+              "ro-rov",
+              "tanker",
+              "unknown"
+            ],
+            "nullable": true
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true,
+            "description": "Provenance of the values (regulation, table, verification note)"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "capacityUnit",
+          "a",
+          "c",
+          "d"
+        ]
+      },
+      "UpdateVesselTypeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "roro_passenger",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64,
+            "description": "Stable unique code (lowercase snake case)"
+          },
+          "name": {
+            "type": "string",
+            "example": "Ro-ro passenger ship",
+            "maxLength": 120
+          },
+          "capacityUnit": {
+            "type": "string",
+            "enum": [
+              "DWT",
+              "GT"
+            ],
+            "description": "Capacity of the CII reference line: deadweight or gross tonnage"
+          },
+          "a": {
+            "type": "number",
+            "example": 2023,
+            "description": "Reference line parameter a (CII_ref = a · Capacity^-c)"
+          },
+          "c": {
+            "type": "number",
+            "example": 0.46,
+            "description": "Reference line exponent c"
+          },
+          "capacityFixed": {
+            "type": "object",
+            "example": 279000,
+            "nullable": true,
+            "description": "Regulation-fixed capacity of the size band (MEPC.353(78)); the CII uses it instead of the vessel capacity when set"
+          },
+          "d": {
+            "$ref": "#/components/schemas/DdVectorDto"
+          },
+          "icon": {
+            "type": "string",
+            "enum": [
+              "bulkca",
+              "combin",
+              "contai",
+              "cruise",
+              "gascar",
+              "genera",
+              "lngcar",
+              "refrig",
+              "ro-roc",
+              "ro-rop",
+              "ro-rov",
+              "tanker",
+              "unknown"
+            ],
+            "nullable": true
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true,
+            "description": "Provenance of the values (regulation, table, verification note)"
+          }
+        }
+      },
+      "CreateFuelDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "diesel_gas_oil",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "example": "Diesel/Gas Oil",
+            "maxLength": 120
+          },
+          "carbonContent": {
+            "type": "number",
+            "example": 0.8744,
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Carbon content, mass fraction (informative: Cf ≈ 44/12 · Cc)"
+          },
+          "conversionFactor": {
+            "type": "number",
+            "example": 3.206,
+            "description": "Cf, t CO2 per t fuel (MEPC.364(79))"
+          },
+          "density": {
+            "type": "number",
+            "example": 0.86,
+            "description": "Density, t/m³ (= kg/L), converts first-formula litres to tonnes"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "carbonContent",
+          "conversionFactor",
+          "density"
+        ]
+      },
+      "UpdateFuelDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "diesel_gas_oil",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "example": "Diesel/Gas Oil",
+            "maxLength": 120
+          },
+          "carbonContent": {
+            "type": "number",
+            "example": 0.8744,
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Carbon content, mass fraction (informative: Cf ≈ 44/12 · Cc)"
+          },
+          "conversionFactor": {
+            "type": "number",
+            "example": 3.206,
+            "description": "Cf, t CO2 per t fuel (MEPC.364(79))"
+          },
+          "density": {
+            "type": "number",
+            "example": 0.86,
+            "description": "Density, t/m³ (= kg/L), converts first-formula litres to tonnes"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        }
+      },
+      "CreateEngineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "object",
+            "example": "niigata_6m28bet",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64,
+            "nullable": true,
+            "description": "Optional stable code (seeds and imports upsert by it)"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "main",
+              "auxiliary"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "example": "NIIGATA 6M28BET",
+            "maxLength": 120
+          },
+          "rpm": {
+            "type": "number",
+            "example": 390,
+            "description": "Rated speed, rpm"
+          },
+          "powerKw": {
+            "type": "number",
+            "example": 2100,
+            "description": "Rated power, kW"
+          },
+          "sfoc": {
+            "type": "number",
+            "example": 179.2,
+            "description": "Specific fuel oil consumption, g/kWh"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "rpm",
+          "powerKw",
+          "sfoc"
+        ]
+      },
+      "UpdateEngineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "object",
+            "example": "niigata_6m28bet",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64,
+            "nullable": true,
+            "description": "Optional stable code (seeds and imports upsert by it)"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "main",
+              "auxiliary"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "example": "NIIGATA 6M28BET",
+            "maxLength": 120
+          },
+          "rpm": {
+            "type": "number",
+            "example": 390,
+            "description": "Rated speed, rpm"
+          },
+          "powerKw": {
+            "type": "number",
+            "example": 2100,
+            "description": "Rated power, kW"
+          },
+          "sfoc": {
+            "type": "number",
+            "example": 179.2,
+            "description": "Specific fuel oil consumption, g/kWh"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        }
+      },
+      "CreateFuelFormulaDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "object",
+            "example": "dharma_ferry_viii",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64,
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "example": "Dharma Ferry VIII regression",
+            "maxLength": 120
+          },
+          "mainEngineFormula": {
+            "type": "string",
+            "example": "-0.0382 * speedKnot ** 2 + 0.8658 * speedKnot - 0.0197",
+            "maxLength": 500,
+            "description": "Main-engine fuel flow. Safe expression of speedKnot (kn) giving L/min: numbers, speedKnot, + - * / ** ^ ( ) and Math.<fn> or <fn> for exp, log, ln, sqrt, pow, abs, min, max (^ and ** are powers)"
+          },
+          "auxiliaryEngineFormula": {
+            "type": "string",
+            "example": "1.5103 * Math.exp(-0.064 * speedKnot)",
+            "maxLength": 500,
+            "description": "Auxiliary-engine fuel flow. Safe expression of speedKnot (kn) giving L/min: numbers, speedKnot, + - * / ** ^ ( ) and Math.<fn> or <fn> for exp, log, ln, sqrt, pow, abs, min, max (^ and ** are powers)"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "mainEngineFormula",
+          "auxiliaryEngineFormula"
+        ]
+      },
+      "UpdateFuelFormulaDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "object",
+            "example": "dharma_ferry_viii",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "maxLength": 64,
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "example": "Dharma Ferry VIII regression",
+            "maxLength": 120
+          },
+          "mainEngineFormula": {
+            "type": "string",
+            "example": "-0.0382 * speedKnot ** 2 + 0.8658 * speedKnot - 0.0197",
+            "maxLength": 500,
+            "description": "Main-engine fuel flow. Safe expression of speedKnot (kn) giving L/min: numbers, speedKnot, + - * / ** ^ ( ) and Math.<fn> or <fn> for exp, log, ln, sqrt, pow, abs, min, max (^ and ** are powers)"
+          },
+          "auxiliaryEngineFormula": {
+            "type": "string",
+            "example": "1.5103 * Math.exp(-0.064 * speedKnot)",
+            "maxLength": 500,
+            "description": "Auxiliary-engine fuel flow. Safe expression of speedKnot (kn) giving L/min: numbers, speedKnot, + - * / ** ^ ( ) and Math.<fn> or <fn> for exp, log, ln, sqrt, pow, abs, min, max (^ and ** are powers)"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        }
+      },
+      "GeoJsonPointDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Point"
+            ],
+            "example": "Point"
+          },
+          "coordinates": {
+            "minItems": 2,
+            "maxItems": 2,
+            "example": [
+              115.5073505,
+              -8.5323949
+            ],
+            "description": "[longitude, latitude], degrees",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "coordinates"
+        ]
+      },
+      "PortDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "example": "Padang Bai"
+          },
+          "code": {
+            "type": "string",
+            "example": "PBI"
+          },
+          "administrativeLocation": {
+            "type": "string",
+            "nullable": true,
+            "example": "51.07.03.2009"
+          },
+          "location": {
+            "$ref": "#/components/schemas/GeoJsonPointDto"
+          },
+          "radiusM": {
+            "type": "number",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code",
+          "administrativeLocation",
+          "location",
+          "radiusM",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreatePortDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Padang Bai",
+            "maxLength": 120
+          },
+          "code": {
+            "type": "string",
+            "example": "PBI",
+            "pattern": "^[A-Z0-9]{2,16}$"
+          },
+          "administrativeLocation": {
+            "type": "object",
+            "example": "51.07.03.2009",
+            "maxLength": 64,
+            "nullable": true,
+            "description": "Administrative area code (Indonesian Kemendagri kode wilayah: province.regency.district.village)"
+          },
+          "location": {
+            "$ref": "#/components/schemas/GeoJsonPointDto"
+          },
+          "radiusM": {
+            "type": "object",
+            "example": 1500,
+            "nullable": true,
+            "description": "Radius of the port area, m (unknown when null)"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "code",
+          "location"
+        ]
+      },
+      "UpdatePortDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Padang Bai",
+            "maxLength": 120
+          },
+          "code": {
+            "type": "string",
+            "example": "PBI",
+            "pattern": "^[A-Z0-9]{2,16}$"
+          },
+          "administrativeLocation": {
+            "type": "object",
+            "example": "51.07.03.2009",
+            "maxLength": 64,
+            "nullable": true,
+            "description": "Administrative area code (Indonesian Kemendagri kode wilayah: province.regency.district.village)"
+          },
+          "location": {
+            "$ref": "#/components/schemas/GeoJsonPointDto"
+          },
+          "radiusM": {
+            "type": "object",
+            "example": 1500,
+            "nullable": true,
+            "description": "Radius of the port area, m (unknown when null)"
+          },
+          "source": {
+            "type": "object",
+            "maxLength": 2000,
+            "nullable": true
+          }
+        }
+      },
+      "RegistryParticularsDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "imo": {
+            "type": "string",
+            "nullable": true,
+            "example": "9037941"
+          },
+          "mmsi": {
+            "type": "number",
+            "example": 525005223
+          },
+          "name": {
+            "type": "string",
+            "example": "DHARMA FERRY VIII"
+          },
+          "built": {
+            "type": "number",
+            "nullable": true,
+            "example": 1990,
+            "description": "Year built"
+          },
+          "flag": {
+            "type": "string",
+            "nullable": true,
+            "example": "ID"
+          },
+          "flagName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Indonesia"
+          },
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Passenger/Ro-Ro Cargo Ship"
+          },
+          "gt": {
+            "type": "number",
+            "nullable": true,
+            "description": "Gross tonnage"
+          },
+          "dwt": {
+            "type": "number",
+            "nullable": true,
+            "description": "Deadweight, t"
+          },
+          "loaM": {
+            "type": "number",
+            "nullable": true,
+            "description": "Length overall, m"
+          },
+          "beamM": {
+            "type": "number",
+            "nullable": true,
+            "description": "Breadth, m"
+          },
+          "draughtM": {
+            "type": "number",
+            "nullable": true,
+            "description": "Draught, m"
+          },
+          "class": {
+            "type": "string",
+            "nullable": true,
+            "description": "Classification society"
+          },
+          "classCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "imo",
+          "mmsi",
+          "name",
+          "built",
+          "flag",
+          "flagName",
+          "type",
+          "typeName",
+          "gt",
+          "dwt",
+          "loaM",
+          "beamM",
+          "draughtM",
+          "class",
+          "classCode",
+          "updatedAt"
+        ]
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Problem type URI"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "description": "Request path",
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$",
+            "description": "Stable UPPER_SNAKE_CASE error code"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Dot separated path, e.g. \"positions.0.lat\""
+                },
+                "message": {
+                  "type": "string"
+                },
+                "code": {
+                  "description": "Machine readable reason",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "message"
+              ],
+              "additionalProperties": false,
+              "description": "Field-level validation error"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code"
+        ],
+        "additionalProperties": {},
+        "description": "RFC 9457 problem details"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ]
+}
