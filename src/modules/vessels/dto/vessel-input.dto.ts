@@ -15,6 +15,7 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsDefined,
   IsIn,
   IsInt,
   IsNumber,
@@ -322,6 +323,7 @@ export class CreateVesselDto {
   readonly firstFuelFormulaId?: string | null;
 
   @ApiProperty({ type: VesselDimensionsDto })
+  @IsDefined()
   @ValidateNested()
   @Type(() => VesselDimensionsDto)
   readonly dimensions!: VesselDimensionsDto;

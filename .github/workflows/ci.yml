@@ -58,7 +58,8 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      # TimescaleDB/PostGIS and NATS containers through testcontainers (Docker is preinstalled).
+      # TimescaleDB/PostGIS, NATS and RustFS (S3) containers through testcontainers
+      # (Docker is preinstalled).
       - name: Integration tests
         run: pnpm test:int
 

@@ -13,7 +13,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -34,6 +33,7 @@ import {
   ListEnginesQuery,
   UpdateEngineDto,
 } from './dto/engine.dto.js';
+import { ID_PIPE } from '../common/params.js';
 import { EnginesService } from './engines.service.js';
 
 /** Engine catalogue: `/api/v2/engines?kind=` (spec §13.3). */
@@ -55,7 +55,7 @@ export class EnginesController {
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get an engine' })
   @ApiOkResponse({ type: EngineDto })
-  async get(@Param('id', new ParseUUIDPipe()) id: string): Promise<EngineDto> {
+  async get(@Param('id', ID_PIPE) id: string): Promise<EngineDto> {
     return new EngineDto(await this.engines.get(id));
   }
 
@@ -80,7 +80,7 @@ export class EnginesController {
   })
   @ApiOkResponse({ type: EngineDto })
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body() body: UpdateEngineDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -97,7 +97,7 @@ export class EnginesController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

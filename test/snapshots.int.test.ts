@@ -1,0 +1,510 @@
+import { randomUUID } from 'node:crypto';
+
+import { newId } from '@darmawanweb/ais-its-contracts/domain';
+import { EVENT_TYPES } from '@darmawanweb/ais-its-contracts/events';
+import { PG_POOL, type Pool } from '@darmawanweb/ais-its-nest/db';
+import { waitFor } from '@darmawanweb/ais-its-nest/testing';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { FleetOutboxRelay } from '../src/modules/snapshots/outbox-relay.js';
+import { SAMPLE_DIMENSIONS } from './fixtures/sample-vessel.js';
+import {
+  bodyOf,
+  createReference,
+  createReferenceSet,
+  createVessel,
+  problemOf,
+  type ReferenceSet,
+  uniqueCode,
+} from './support/fleet-fixtures.js';
+import {
+  FleetStreamProbe,
+  lastStoredFleetMessage,
+  type ReceivedFleetEvent,
+} from './support/fleet-stream.js';
+import {
+  newOrganization,
+  SUPER_ADMIN,
+  startTestService,
+  type TestService,
+} from './support/test-service.js';
+
+/** The snapshot entry of the test auxiliary engine. */
+const AUX_ENGINE_SNAPSHOT = (references: ReferenceSet) => ({
+  id: references.auxEngineId,
+  name: 'MAN D2866LE (test)',
+  rpm: 1800,
+  powerKw: 276,
+  sfoc: 207,
+});
+
+const isUpsert = (event: ReceivedFleetEvent): boolean =>
+  event.envelope.type === EVENT_TYPES.FLEET_VESSEL_UPSERTED;
+
+/** The snapshot payload of an upsert event (typed loosely for assertions). */
+function snapshotOf(event: ReceivedFleetEvent): Record<string, unknown> & {
+  updatedAt: string;
+} {
+  expect(event.envelope.type).toBe(EVENT_TYPES.FLEET_VESSEL_UPSERTED);
+  return event.envelope.data as Record<string, unknown> & { updatedAt: string };
+}
+
+interface OutboxRecord {
+  id: string;
+  type: string;
+  entity_key: string | null;
+  attempts: number;
+  published_at: Date | null;
+  failed_at: Date | null;
+  last_error: string | null;
+  next_attempt_at: Date;
+}
+
+describe('VesselSnapshotV1 publication through the transactional outbox', () => {
+  let service: TestService;
+  let pool: Pool;
+  let probe: FleetStreamProbe;
+  let references: ReferenceSet;
+  const org = newOrganization();
+
+  const outboxRow = async (id: string): Promise<OutboxRecord | undefined> => {
+    const { rows } = await pool.query<OutboxRecord>(
+      'SELECT id, type, entity_key, attempts, published_at, failed_at, last_error, next_attempt_at FROM outbox WHERE id = $1',
+      [id],
+    );
+    return rows[0];
+  };
+
+  beforeAll(async () => {
+    service = await startTestService();
+    pool = service.app.get<unknown, Pool>(PG_POOL);
+    probe = await FleetStreamProbe.start(service.app);
+    references = await createReferenceSet(service);
+  });
+
+  afterAll(async () => {
+    await probe.stop();
+    await service.app.close();
+  });
+
+  it('publishes the snapshot of a new vessel to fleet.vessel.v1.<id> with Nats-Msg-Id = outbox id', async () => {
+    const vessel = await createVessel(service, org.admin, references);
+
+    const event = await probe.next(vessel.id, isUpsert);
+    expect(event.msgId).toBe(event.envelope.id);
+    expect(event.envelope).toMatchObject({
+      source: 'fleet',
+      subject: vessel.id,
+    });
+    expect(snapshotOf(event)).toEqual({
+      id: vessel.id,
+      orgId: org.id,
+      mmsi: vessel.mmsi,
+      imo: vessel.imo,
+      name: 'Dharma Ferry VIII',
+      flag: 'ID',
+      builtYear: 1990,
+      status: 'active',
+      annualVoyagePercentage: 41.6666666666667,
+      dimensions: SAMPLE_DIMENSIONS,
+      type: {
+        id: references.typeId,
+        code: references.typeCode,
+        name: 'Ro-ro passenger ship (test)',
+        capacityUnit: 'GT',
+        a: 2023,
+        c: 0.46,
+        capacityFixed: null,
+        d: { d1: 0.76, d2: 0.92, d3: 1.14, d4: 1.3 },
+      },
+      fuel: {
+        id: references.fuelId,
+        code: references.fuelCode,
+        name: 'Diesel/Gas oil (test)',
+        carbonContent: 0.8744,
+        conversionFactor: 3.206,
+        density: 0.86,
+      },
+      mainEngine: {
+        id: references.mainEngineId,
+        name: 'NIIGATA 6M28BET (test)',
+        rpm: 390,
+        powerKw: 2100,
+        sfoc: 179.2,
+        quantity: 2,
+      },
+      // One entry per physical auxiliary engine (legacy engineSpecs shape).
+      auxEngines: [
+        AUX_ENGINE_SNAPSHOT(references),
+        AUX_ENGINE_SNAPSHOT(references),
+      ],
+      auxEngineQuantity: 2,
+      firstFuelFormula: {
+        id: references.formulaId,
+        mainEngineFormula:
+          '-0.0382 * speedKnot ** 2 + 0.8658 * speedKnot - 0.0197',
+        auxiliaryEngineFormula: '1.5103 * Math.exp(-0.064 * speedKnot)',
+      },
+      portIds: [...references.portIds],
+      updatedAt: vessel.updatedAt,
+    });
+
+    // The relay marked the row published; the stream holds it as the latest message.
+    const row = await waitFor(
+      async () => {
+        const current = await outboxRow(event.envelope.id);
+        return current?.published_at === null ? false : current;
+      },
+      { message: 'outbox row not marked published' },
+    );
+    expect(row).toMatchObject({
+      type: EVENT_TYPES.FLEET_VESSEL_UPSERTED,
+      entity_key: vessel.id,
+    });
+    const stored = await lastStoredFleetMessage(service.app, vessel.id);
+    expect(stored?.msgId).toBe(event.envelope.id);
+  });
+
+  it('publishes every change of a vessel in commit order', async () => {
+    const vessel = await createVessel(service, org.admin, references);
+    const url = `/api/v2/vessels/${vessel.id}`;
+    await probe.next(vessel.id, isUpsert);
+
+    bodyOf(
+      await service.request(org.admin, 'PATCH', url, { status: 'inactive' }),
+      200,
+    );
+    bodyOf(
+      await service.request(org.admin, 'PUT', `${url}/ports`, [
+        references.portIds[1],
+      ]),
+      200,
+    );
+    bodyOf(
+      await service.request(org.admin, 'PUT', `${url}/engines`, [
+        { engineId: references.auxEngineId, role: 'auxiliary', quantity: 3 },
+      ]),
+      200,
+    );
+    const last = snapshotOf(
+      await probe.next(
+        vessel.id,
+        (event) =>
+          isUpsert(event) &&
+          (event.envelope.data as { auxEngineQuantity: number })
+            .auxEngineQuantity === 3,
+      ),
+    );
+    expect(last).toMatchObject({
+      status: 'inactive',
+      portIds: [references.portIds[1]],
+      mainEngine: null,
+      auxEngineQuantity: 3,
+    });
+    // Snapshots of one vessel arrive in order, each newer than the previous one.
+    const times = probe
+      .of(vessel.id)
+      .filter(isUpsert)
+      .map((event) => Date.parse(snapshotOf(event).updatedAt));
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    expect(new Set(times).size).toBe(times.length);
+  });
+
+  it('republishes every vessel that embeds a changed fuel, type, engine or formula', async () => {
+    const shared = await createReferenceSet(service);
+    const otherFuel = await createReference(service, '/api/v2/fuels', {
+      code: uniqueCode('fuel'),
+      name: 'Heavy fuel oil (test)',
+      carbonContent: 0.8493,
+      conversionFactor: 3.114,
+      density: 0.98,
+    });
+    const first = await createVessel(service, org.admin, shared);
+    const second = await createVessel(service, SUPER_ADMIN, shared, {
+      orgId: randomUUID(),
+    });
+    const bystander = await createVessel(service, org.admin, shared, {
+      fuelId: otherFuel.id,
+      firstFuelFormulaId: null,
+    });
+    for (const vessel of [first, second, bystander]) {
+      await probe.next(vessel.id, isUpsert);
+    }
+    const bystanderEvents = probe.of(bystander.id).length;
+
+    // Fuel: only the two vessels burning it.
+    bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/fuels/${shared.fuelId}`,
+        { density: 0.845, conversionFactor: 3.2 },
+      ),
+      200,
+    );
+    for (const vessel of [first, second]) {
+      const snapshot = snapshotOf(
+        await probe.next(
+          vessel.id,
+          (event) =>
+            isUpsert(event) &&
+            (event.envelope.data as { fuel: { density: number } }).fuel
+              .density === 0.845,
+        ),
+      );
+      expect(snapshot.fuel).toMatchObject({ conversionFactor: 3.2 });
+      expect(Date.parse(snapshot.updatedAt)).toBeGreaterThan(
+        Date.parse(vessel.updatedAt as string),
+      );
+    }
+
+    // Vessel type (incl. the regulation-fixed capacity): all three vessels.
+    bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/vessel-types/${shared.typeId}`,
+        { capacityFixed: 65_000, d: { d1: 0.78, d2: 0.92, d3: 1.1, d4: 1.37 } },
+      ),
+      200,
+    );
+    for (const vessel of [first, second, bystander]) {
+      const snapshot = snapshotOf(
+        await probe.next(
+          vessel.id,
+          (event) =>
+            isUpsert(event) &&
+            (event.envelope.data as { type: { capacityFixed: number | null } })
+              .type.capacityFixed === 65_000,
+        ),
+      );
+      expect(snapshot.type).toMatchObject({
+        d: { d1: 0.78, d2: 0.92, d3: 1.1, d4: 1.37 },
+      });
+    }
+
+    // Engine and first fuel formula.
+    bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/engines/${shared.auxEngineId}`,
+        { sfoc: 199.5 },
+      ),
+      200,
+    );
+    bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/fuel-formulas/${shared.formulaId}`,
+        { mainEngineFormula: '0.42 * speedKnot ^ 1.5' },
+      ),
+      200,
+    );
+    const latest = snapshotOf(
+      await probe.next(
+        first.id,
+        (event) =>
+          isUpsert(event) &&
+          (
+            event.envelope.data as {
+              firstFuelFormula: { mainEngineFormula: string } | null;
+            }
+          ).firstFuelFormula?.mainEngineFormula === '0.42 * speedKnot ^ 1.5',
+      ),
+    );
+    expect(latest.auxEngines).toEqual([
+      expect.objectContaining({ sfoc: 199.5 }),
+      expect.objectContaining({ sfoc: 199.5 }),
+    ]);
+
+    // The bystander got exactly the type cascade and the engine cascade, no fuel or formula one.
+    await probe.next(
+      bystander.id,
+      (event) =>
+        isUpsert(event) &&
+        (event.envelope.data as { auxEngines: { sfoc: number }[] })
+          .auxEngines[0]?.sfoc === 199.5,
+    );
+    expect(probe.of(bystander.id).length - bystanderEvents).toBe(2);
+
+    // A port change republishes nothing (snapshots carry port ids only).
+    const before = probe.of(first.id).length;
+    bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/ports/${shared.portIds[0]}`,
+        { name: 'Padang Bai (renamed)' },
+      ),
+      200,
+    );
+    await service.app.get(FleetOutboxRelay).relayOnce();
+    expect(probe.of(first.id).length).toBe(before);
+
+    // Reference rows in use cannot be deleted.
+    expect(
+      problemOf(
+        await service.request(
+          SUPER_ADMIN,
+          'DELETE',
+          `/api/v2/fuels/${shared.fuelId}`,
+        ),
+        409,
+      ).code,
+    ).toBe('REFERENCE_IN_USE');
+  });
+
+  it('publishes a tombstone when a vessel is deleted', async () => {
+    const vessel = await createVessel(service, org.admin, references);
+    await probe.next(vessel.id, isUpsert);
+
+    expect(
+      (
+        await service.request(
+          org.admin,
+          'DELETE',
+          `/api/v2/vessels/${vessel.id}`,
+        )
+      ).statusCode,
+    ).toBe(204);
+
+    const tombstone = await probe.next(
+      vessel.id,
+      (event) => event.envelope.type === EVENT_TYPES.FLEET_VESSEL_DELETED,
+    );
+    expect(tombstone.envelope.data).toEqual({
+      id: vessel.id,
+      mmsi: vessel.mmsi,
+      orgId: org.id,
+    });
+    expect(tombstone.msgId).toBe(tombstone.envelope.id);
+    // Compaction keeps only the tombstone for the vessel.
+    const stored = await lastStoredFleetMessage(service.app, vessel.id);
+    expect(stored?.envelope.type).toBe(EVENT_TYPES.FLEET_VESSEL_DELETED);
+  });
+
+  it('republishes a vessel on demand for platform administrators only', async () => {
+    const vessel = await createVessel(service, org.admin, references);
+    const original = await probe.next(vessel.id, isUpsert);
+    const url = `/api/v2/vessels/${vessel.id}/republish`;
+
+    expect(
+      problemOf(await service.request(org.admin, 'POST', url), 403).code,
+    ).toBe('PLATFORM_ADMIN_REQUIRED');
+    problemOf(await service.request(org.viewer, 'POST', url), 403);
+    expect(
+      bodyOf(await service.request(SUPER_ADMIN, 'POST', url), 202),
+    ).toEqual({ vesselId: vessel.id, enqueued: 1 });
+    problemOf(
+      await service.request(
+        SUPER_ADMIN,
+        'POST',
+        `/api/v2/vessels/${randomUUID()}/republish`,
+      ),
+      404,
+    );
+
+    const again = await probe.next(
+      vessel.id,
+      (event) => isUpsert(event) && event.envelope.id !== original.envelope.id,
+    );
+    // Same data, new envelope (consumers keep it: equal updatedAt).
+    expect(again.envelope.data).toEqual(original.envelope.data);
+  });
+
+  it('retries failed publications with backoff and parks payloads that can never be published', async () => {
+    const relay = service.app.get(FleetOutboxRelay);
+    // A row for a stream nobody created in this test (GEO): NATS has no responder.
+    // Envelope ids are UUID v7 (spec §7.1), like the ids enqueueEvent assigns.
+    const unroutable = newId();
+    const zoneId = newId();
+    await pool.query(
+      "INSERT INTO outbox (id, type, entity_key, data) VALUES ($1, 'geo.zone.deleted.v1', $2, $3::jsonb)",
+      [unroutable, zoneId, JSON.stringify({ id: zoneId, orgId: null })],
+    );
+    // A row whose payload is not a VesselSnapshotV1 any more.
+    const poison = newId();
+    const vesselId = newId();
+    await pool.query(
+      "INSERT INTO outbox (id, type, entity_key, data) VALUES ($1, 'fleet.vessel.upserted.v1', $2, $3::jsonb)",
+      [poison, vesselId, JSON.stringify({ id: vesselId })],
+    );
+
+    const parked = await waitFor(
+      async () => {
+        const row = await outboxRow(poison);
+        return row?.failed_at === null ? false : row;
+      },
+      { message: 'poison row not parked' },
+    );
+    expect(parked.last_error).toMatch(/Invalid fleet\.vessel\.upserted\.v1/);
+    expect(parked.published_at).toBeNull();
+
+    const retried = await waitFor(
+      async () => {
+        const row = await outboxRow(unroutable);
+        return row !== undefined && row.attempts >= 2 ? row : false;
+      },
+      { timeoutMs: 15_000, message: 'unroutable row not retried' },
+    );
+    expect(retried.published_at).toBeNull();
+    expect(retried.failed_at).toBeNull();
+    expect(retried.last_error).not.toBeNull();
+    expect(retried.next_attempt_at.getTime()).toBeGreaterThan(
+      Date.now() - 1000,
+    );
+
+    const metrics = await service.app.inject({
+      method: 'GET',
+      url: '/metrics',
+    });
+    expect(metrics.body).toMatch(
+      /aisits_outbox_relayed_total\{[^}]*outcome="retried"[^}]*\} [1-9]/,
+    );
+    expect(metrics.body).toMatch(
+      /aisits_outbox_relayed_total\{[^}]*outcome="rejected"[^}]*\} [1-9]/,
+    );
+    expect(metrics.body).toMatch(/aisits_outbox_failed [1-9]/);
+    expect(metrics.body).toMatch(
+      /aisits_fleet_snapshots_enqueued_total\{reason="reference_change"\} [1-9]/,
+    );
+
+    // Neither row blocks other vessels: a new vessel is still published.
+    await pool.query('DELETE FROM outbox WHERE id = ANY($1::uuid[])', [
+      [unroutable, poison],
+    ]);
+    const vessel = await createVessel(service, org.admin, references);
+    await probe.next(vessel.id, isUpsert);
+    expect((await relay.relayOnce()).rejected).toBe(0);
+  });
+
+  it('republishes the whole fleet on boot with FLEET_REPUBLISH_ON_BOOT=true', async () => {
+    const vessel = await createVessel(service, org.admin, references);
+    const original = await probe.next(vessel.id, isUpsert);
+    const { rows } = await pool.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM vessels',
+    );
+    const fleetSize = rows[0]?.count ?? 0;
+
+    // A second replica boots with the flag (both relays share the outbox).
+    const replica = await startTestService({ FLEET_REPUBLISH_ON_BOOT: 'true' });
+    try {
+      const again = await probe.next(
+        vessel.id,
+        (event) =>
+          isUpsert(event) && event.envelope.id !== original.envelope.id,
+        20_000,
+      );
+      expect(again.envelope.data).toEqual(original.envelope.data);
+    } finally {
+      await replica.app.close();
+    }
+    const enqueued = await pool.query<{ count: number }>(
+      "SELECT count(DISTINCT entity_key)::int AS count FROM outbox WHERE type = 'fleet.vessel.upserted.v1' AND created_at > $1",
+      [new Date(Date.parse(original.envelope.time))],
+    );
+    expect(enqueued.rows[0]?.count).toBeGreaterThanOrEqual(fleetSize);
+  });
+});

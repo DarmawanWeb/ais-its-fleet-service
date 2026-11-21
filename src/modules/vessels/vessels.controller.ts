@@ -14,7 +14,6 @@ import {
   HttpStatus,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -35,6 +34,7 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
+import { ID_PIPE } from '../common/params.js';
 import { PHOTO_MAX_BYTES } from '../../domain/photo.js';
 import { invalidField } from '../../errors.js';
 import { ArrayBodyPipe, UuidArrayBodyPipe } from '../common/array-body.pipe.js';
@@ -140,7 +140,7 @@ export class VesselsController {
   @ApiOperation({ summary: 'Get a vessel' })
   @ApiOkResponse({ schema: VESSEL_VIEW_SCHEMA })
   async get(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
   ): Promise<VesselSummaryDto | VesselDetailDto> {
     return toVesselDto(await this.vessels.get({ id }, principal));
@@ -153,7 +153,7 @@ export class VesselsController {
   })
   @ApiOkResponse({ type: VesselDetailDto })
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body() body: UpdateVesselDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -169,7 +169,7 @@ export class VesselsController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {
@@ -181,7 +181,7 @@ export class VesselsController {
   @ApiOperation({ summary: 'Replace the dimensions and hull coefficients' })
   @ApiOkResponse({ type: VesselDetailDto })
   async replaceDimensions(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body() body: VesselDimensionsDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -201,7 +201,7 @@ export class VesselsController {
   @ApiBody({ type: [VesselEngineInputDto] })
   @ApiOkResponse({ type: VesselDetailDto })
   async replaceEngines(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body(new ArrayBodyPipe(VesselEngineInputDto, MAX_VESSEL_ENGINES))
     engines: VesselEngineInputDto[],
     @CurrentPrincipal() principal: Principal,
@@ -225,7 +225,7 @@ export class VesselsController {
   })
   @ApiOkResponse({ type: VesselDetailDto })
   async replacePorts(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body(new UuidArrayBodyPipe(MAX_VESSEL_PORTS)) portIds: string[],
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -251,7 +251,7 @@ export class VesselsController {
   })
   @ApiCreatedResponse({ type: VesselDetailDto })
   async uploadPhoto(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<VesselDetailDto> {
@@ -267,7 +267,7 @@ export class VesselsController {
   })
   @ApiNoContentResponse()
   async removePhoto(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {
@@ -284,7 +284,7 @@ export class VesselsController {
   })
   @ApiAcceptedResponse({ type: RepublishResultDto })
   async republish(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<RepublishResultDto> {

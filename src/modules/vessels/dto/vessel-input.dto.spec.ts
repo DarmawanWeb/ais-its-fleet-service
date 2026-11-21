@@ -96,6 +96,16 @@ describe('CreateVesselDto', () => {
       engines: ['0'],
     });
   });
+
+  it('requires the dimensions (a nested object is not optional by itself)', async () => {
+    expect(
+      await errorsOf(CreateVesselDto, { ...VALID, dimensions: undefined }),
+    ).toEqual({ dimensions: ['isDefined'] });
+    // PATCH has no dimensions at all (PUT /vessels/:id/dimensions replaces them).
+    expect(
+      await errorsOf(UpdateVesselDto, { dimensions: SAMPLE_DIMENSIONS }),
+    ).toEqual({ dimensions: ['whitelistValidation'] });
+  });
 });
 
 describe('UpdateVesselDto', () => {

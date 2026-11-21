@@ -32,13 +32,16 @@ describe('ArrayBodyPipe', () => {
   });
 
   it('reports item errors with their index and refuses non-arrays and long arrays', async () => {
+    // class-validator reports whitelist violations first: compare as a set.
     expect(
-      await fieldErrors(() =>
-        pipe.transform([
-          { engineId: 'x', role: 'main', quantity: 1, extra: true },
-          7,
-        ]),
-      ),
+      (
+        await fieldErrors(() =>
+          pipe.transform([
+            { engineId: 'x', role: 'main', quantity: 1, extra: true },
+            7,
+          ]),
+        )
+      ).sort(),
     ).toEqual([
       '0.engineId:isUuid',
       '0.extra:whitelistValidation',

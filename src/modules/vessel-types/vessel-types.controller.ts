@@ -13,7 +13,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -28,6 +27,7 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
+import { ID_PIPE } from '../common/params.js';
 import { ReferenceListQuery } from '../common/validation.js';
 import {
   CreateVesselTypeDto,
@@ -59,9 +59,7 @@ export class VesselTypesController {
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a ship type' })
   @ApiOkResponse({ type: VesselTypeDto })
-  async get(
-    @Param('id', new ParseUUIDPipe()) id: string,
-  ): Promise<VesselTypeDto> {
+  async get(@Param('id', ID_PIPE) id: string): Promise<VesselTypeDto> {
     return new VesselTypeDto(await this.types.get(id));
   }
 
@@ -86,7 +84,7 @@ export class VesselTypesController {
   })
   @ApiOkResponse({ type: VesselTypeDto })
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body() body: UpdateVesselTypeDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -103,7 +101,7 @@ export class VesselTypesController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

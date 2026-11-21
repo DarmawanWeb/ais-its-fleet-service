@@ -8,6 +8,7 @@ import {
 import { Transform, Type } from 'class-transformer';
 import {
   Equals,
+  IsDefined,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -74,6 +75,7 @@ export class CreatePortDto {
   readonly administrativeLocation?: string | null;
 
   @ApiProperty({ type: GeoJsonPointDto })
+  @IsDefined()
   @ValidateNested()
   @Type(() => GeoJsonPointDto)
   readonly location!: GeoJsonPointDto;

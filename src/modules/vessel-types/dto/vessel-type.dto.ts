@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsDefined,
   IsIn,
   IsNumber,
   IsOptional,
@@ -118,6 +119,7 @@ export class CreateVesselTypeDto {
   readonly capacityFixed?: number | null;
 
   @ApiProperty({ type: DdVectorDto })
+  @IsDefined()
   @ValidateNested()
   @Type(() => DdVectorDto)
   @IsStrictlyIncreasing(['d1', 'd2', 'd3', 'd4'])

@@ -13,7 +13,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -28,6 +27,7 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
+import { ID_PIPE } from '../common/params.js';
 import { ReferenceListQuery } from '../common/validation.js';
 import {
   CreateFuelFormulaDto,
@@ -60,9 +60,7 @@ export class FuelFormulasController {
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a first fuel formula' })
   @ApiOkResponse({ type: FuelFormulaDto })
-  async get(
-    @Param('id', new ParseUUIDPipe()) id: string,
-  ): Promise<FuelFormulaDto> {
+  async get(@Param('id', ID_PIPE) id: string): Promise<FuelFormulaDto> {
     return new FuelFormulaDto(await this.formulas.get(id));
   }
 
@@ -92,7 +90,7 @@ export class FuelFormulasController {
   })
   @ApiOkResponse({ type: FuelFormulaDto })
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body() body: UpdateFuelFormulaDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -110,7 +108,7 @@ export class FuelFormulasController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

@@ -13,7 +13,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -34,6 +33,7 @@ import {
   PortDto,
   UpdatePortDto,
 } from './dto/port.dto.js';
+import { ID_PIPE } from '../common/params.js';
 import { PortsService } from './ports.service.js';
 
 /** Ports of call with GeoJSON positions: `/api/v2/ports` (spec §13.3). */
@@ -60,7 +60,7 @@ export class PortsController {
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a port' })
   @ApiOkResponse({ type: PortDto })
-  async get(@Param('id', new ParseUUIDPipe()) id: string): Promise<PortDto> {
+  async get(@Param('id', ID_PIPE) id: string): Promise<PortDto> {
     return new PortDto(await this.ports.get(id));
   }
 
@@ -83,7 +83,7 @@ export class PortsController {
   })
   @ApiOkResponse({ type: PortDto })
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @Body() body: UpdatePortDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -100,7 +100,7 @@ export class PortsController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ID_PIPE) id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

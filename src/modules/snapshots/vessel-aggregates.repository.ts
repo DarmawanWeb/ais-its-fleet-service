@@ -243,7 +243,11 @@ export class VesselAggregatesRepository {
         sql`${vesselEngines.role} = 'main' DESC`,
         asc(vesselEngines.position),
       );
-    const rows = lock ? await query.for('share', { of: engines }) : await query;
+    // FOR SHARE without OF: drizzle renders `OF "fleet"."engines"`, which
+    // PostgreSQL refuses ("must specify unqualified relation names"); locking
+    // the vessel's own vessel_engines rows as well is harmless (the caller
+    // already holds the vessel row).
+    const rows = lock ? await query.for('share') : await query;
     const result = new Map<string, VesselEngine[]>();
     for (const { fitted, engine } of rows) {
       const list = result.get(fitted.vesselId) ?? [];

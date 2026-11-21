@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { ConfigValidationError, loadConfig } from '@darmawanweb/ais-its-nest';
 import { describe, expect, it } from 'vitest';
 
@@ -11,6 +13,20 @@ function load(env: Record<string, string> = {}) {
     envFile: false,
     output: null,
   });
+}
+
+/** `NAME=value` lines of `.env.example`, commented-out ones (`# NAME=`) included. */
+function envExample(): Map<string, string> {
+  const text = readFileSync(
+    new URL('../.env.example', import.meta.url),
+    'utf8',
+  );
+  const entries = new Map<string, string>();
+  for (const line of text.split('\n')) {
+    const match = /^#?\s*([A-Z][A-Z0-9_]*)=(.*)$/.exec(line);
+    if (match?.[1] !== undefined) entries.set(match[1], match[2] ?? '');
+  }
+  return entries;
 }
 
 describe('configSchema', () => {
@@ -78,5 +94,17 @@ describe('configSchema', () => {
         DATABASE_URL: 'postgres://u:p@db:5432/aisits',
       }),
     ).toThrow(ConfigValidationError);
+  });
+
+  it('documents every variable in .env.example, with valid values', () => {
+    const documented = envExample();
+    const keys = Object.keys(
+      load({
+        S3_PUBLIC_ENDPOINT: 'https://photos.example.org',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel:4318',
+      }),
+    );
+    expect(keys.filter((key) => !documented.has(key))).toEqual([]);
+    expect(() => load(Object.fromEntries(documented))).not.toThrow();
   });
 });

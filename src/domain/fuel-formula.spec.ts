@@ -127,7 +127,7 @@ describe('parseFuelFormula — grammar', () => {
   it('refuses code and unknown identifiers', () => {
     for (const [source, message] of [
       ['eval(1)', 'Unknown identifier "eval"'],
-      ['eval("1")', "Unexpected character '\"'"],
+      ['eval("1")', 'Unexpected character "\\""'],
       ['process.exit(1)', 'Unknown identifier "process.exit"'],
       ['Math.random()', 'Unknown identifier "Math.random"'],
       ['constructor', 'Unknown identifier "constructor"'],
