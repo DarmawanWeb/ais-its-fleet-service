@@ -24,6 +24,7 @@ the central repository ([`ais-its-platform`](https://github.com/DarmawanWeb/ais-
 - [Operations](#operations)
 - [Seeds and data provenance](#seeds-and-data-provenance)
 - [Legacy parity](#legacy-parity)
+- [Known limitations](#known-limitations)
 - [Methodology & references](#methodology--references)
 
 ## Purpose and responsibilities
@@ -101,7 +102,10 @@ advances `vessels.updated_at` with `clock_timestamp()` and inserts the new snaps
 `fleet.outbox`; audit records, metrics and S3 deletions follow the commit. A reference-data change
 locks every vessel that embeds the row, advances their `updated_at` and enqueues all their
 snapshots in the transaction of the change. Deadlocks between the two orders are retried
-(`TRANSACTION_RETRIES = 3`).
+(`TRANSACTION_RETRIES = 3`, `src/db/database.ts#inTransaction`; the retry follows the `cause` of
+drizzle's `DrizzleQueryError`, which the kit's `withTransaction` does not). A kind change of an
+engine locks the engine row (`FOR UPDATE`) before counting the vessels fitted with it, so it can
+never race a vessel write that fits the engine in its old role.
 
 Startup follows the kit's lifecycle rule: connect, migrate and ensure the `FLEET` (and `AUDIT`)
 streams in `onModuleInit` → start the outbox relay, the optional boot republish and the bucket
@@ -114,20 +118,25 @@ any connection.
 All tables live in schema `fleet` (owner `fleet_svc`); measurements are `double precision`, enums
 `text` + `CHECK`, ids UUID v7 generated in the application.
 
-| Table                  | Key columns                                                                                                                                                                                                                                                         | Notes                                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vessel_types`         | `code` unique, `capacity_unit` (`DWT`\|`GT`), `a`, `c`, `capacity_fixed`, `d1 < d2 < d3 < d4`, `icon`, `source`                                                                                                                                                     | CII reference line `CII_ref = a · Capacity^(−c)`; `capacity_fixed` = regulation-fixed capacity of a size band (e.g. 279 000 DWT), `NULL` = the vessel's own capacity |
-| `fuels`                | `code` unique, `carbon_content` (0..1), `conversion_factor` (Cf, t CO2/t fuel), `density` (t/m³ = kg/L), `source`                                                                                                                                                   |                                                                                                                                                                      |
-| `engines`              | `kind` (`main`\|`auxiliary`), `name`, `rpm`, `power_kw`, `sfoc` (g/kWh), optional `code` (seed key)                                                                                                                                                                 |                                                                                                                                                                      |
-| `fuel_formulas`        | `name`, `main_engine_formula`, `auxiliary_engine_formula` (≤ 500 chars, safe grammar), optional `code`                                                                                                                                                              | strings evaluated by the emission service                                                                                                                            |
-| `ports`                | `code` unique (`[A-Z0-9]{2,16}`), `name`, `administrative_location`, `geom geography(Point,4326)` (GiST), `radius_m`                                                                                                                                                | GeoJSON point in/out                                                                                                                                                 |
-| `vessels`              | `org_id` (`NULL` = platform-owned), `mmsi` unique, `imo` unique, `name`, `flag` (ISO alpha-2), `built_year`, `status` (`active`\|`inactive`\|`laid_up`), `annual_voyage_percentage`, `photo_key`, `type_id`, `fuel_id`, `first_fuel_formula_id`, `legacy_id` unique | references are `ON DELETE RESTRICT`                                                                                                                                  |
-| `vessel_dimensions`    | `vessel_id` PK, `capacity`, `dwt`, `gt`, `cb`, `lwl`, `b`, `t`, `cwp`, `loa`, `lpp`, `cp`, `cm`, `cbnsp`, `bulbous_bow`, `cstern`, `c1`, `c2`, `c3`, `c5`, `vs`                                                                                                     | see [field meanings](#dimensions-and-hull-coefficients)                                                                                                              |
-| `vessel_engines`       | PK `(vessel_id, engine_id, role)`, `quantity` 1..64, `position`                                                                                                                                                                                                     | at most one main row (partial unique index)                                                                                                                          |
-| `vessel_ports`         | PK `(vessel_id, port_id)`, `position`                                                                                                                                                                                                                               | ordered ports of call                                                                                                                                                |
-| `registry_particulars` | `mmsi` unique, `imo`, `name`, `built`, `flag`, `flag_name`, `type`, `type_name`, `gt`, `dwt`, `loa`, `beam`, `draught`, `class`, `class_code`, `raw jsonb`                                                                                                          | legacy `SecondaryShip`; btree `text_pattern_ops` indexes on `lower(name)` and `imo` (no `pg_trgm`: services may not create extensions)                               |
-| `outbox`               | `id` (= envelope id = `Nats-Msg-Id`), `seq` identity, `type`, `entity_key` (vessel id), `data`, `attempts`, `next_attempt_at`, `last_error`, `published_at`, `failed_at`                                                                                            | published rows purged after `OUTBOX_RETENTION_HOURS`                                                                                                                 |
-| `schema_migrations`    | `version`, `name`, `checksum`, `applied_at`                                                                                                                                                                                                                         | kit migrator                                                                                                                                                         |
+| Table                  | Key columns                                                                                                                                                                                                                                                         | Notes                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vessel_types`         | `code` unique, `capacity_unit` (`DWT`\|`GT`), `a`, `c`, `capacity_fixed`, `d1 < d2 < d3 < d4`, `icon`, `source`                                                                                                                                                     | CII reference line `CII_ref = a · Capacity^(−c)`; `capacity_fixed` = regulation-fixed capacity of a size band (e.g. 279 000 DWT), `NULL` = the vessel's own capacity            |
+| `fuels`                | `code` unique, `carbon_content` (0..1), `conversion_factor` (Cf, t CO2/t fuel), `density` (t/m³ = kg/L), `source`                                                                                                                                                   |                                                                                                                                                                                 |
+| `engines`              | `kind` (`main`\|`auxiliary`), `name`, `rpm`, `power_kw`, `sfoc` (g/kWh), optional `code` (seed key)                                                                                                                                                                 |                                                                                                                                                                                 |
+| `fuel_formulas`        | `name`, `main_engine_formula`, `auxiliary_engine_formula` (≤ 500 chars, safe grammar), optional `code`                                                                                                                                                              | strings evaluated by the emission service                                                                                                                                       |
+| `ports`                | `code` unique (`[A-Z0-9]{2,16}`), `name`, `administrative_location`, `geom geography(Point,4326)` (GiST), `radius_m`                                                                                                                                                | GeoJSON point in/out                                                                                                                                                            |
+| `vessels`              | `org_id` (`NULL` = platform-owned), `mmsi` unique, `imo` unique, `name`, `flag` (ISO alpha-2), `built_year`, `status` (`active`\|`inactive`\|`laid_up`), `annual_voyage_percentage`, `photo_key`, `type_id`, `fuel_id`, `first_fuel_formula_id`, `legacy_id` unique | references are `ON DELETE RESTRICT`                                                                                                                                             |
+| `vessel_dimensions`    | `vessel_id` PK, `capacity`, `dwt`, `gt`, `cb`, `lwl`, `b`, `t`, `cwp`, `loa`, `lpp`, `cp`, `cm`, `cbnsp`, `bulbous_bow`, `cstern`, `c1`, `c2`, `c3`, `c5`, `vs`                                                                                                     | see [field meanings](#dimensions-and-hull-coefficients)                                                                                                                         |
+| `vessel_engines`       | PK `(vessel_id, engine_id, role)`, `quantity` 1..64, `position`                                                                                                                                                                                                     | at most one main row (partial unique index)                                                                                                                                     |
+| `vessel_ports`         | PK `(vessel_id, port_id)`, `position`                                                                                                                                                                                                                               | ordered ports of call                                                                                                                                                           |
+| `registry_particulars` | `mmsi` unique, `imo`, `name`, `built`, `flag`, `flag_name`, `type`, `type_name`, `gt`, `dwt`, `loa`, `beam`, `draught`, `class`, `class_code`, `raw jsonb`                                                                                                          | legacy `SecondaryShip`; btree `text_pattern_ops` indexes on `lower(name)` and `imo` (no `pg_trgm`: services may not create extensions), see [registry search](#registry-search) |
+| `outbox`               | `id` (= envelope id = `Nats-Msg-Id`), `seq` identity, `type`, `entity_key` (vessel id), `data`, `attempts`, `next_attempt_at`, `last_error`, `published_at`, `failed_at`                                                                                            | published rows purged after `OUTBOX_RETENTION_HOURS`                                                                                                                            |
+| `schema_migrations`    | `version`, `name`, `checksum`, `applied_at`                                                                                                                                                                                                                         | kit migrator                                                                                                                                                                    |
+
+[`src/db/schema.ts`](src/db/schema.ts) mirrors the migration (spec §6) column by column, with every
+primary key, foreign key, unique and `CHECK` constraint and every index (method, uniqueness,
+predicate) under the name PostgreSQL gave it; `test/schema-mirror.int.test.ts` compares it with the
+migrated database.
 
 ### Dimensions and hull coefficients
 
@@ -183,12 +192,45 @@ committed [`openapi.json`](openapi.json).
 | POST / PATCH / DELETE | `/fuel-formulas`, `/fuel-formulas/:id`                                | `reference:write`                  | formulas validated on write; PATCH republishes its vessels                                             |
 | GET                   | `/ports?bbox=minLon,minLat,maxLon,maxLat&search`, `/ports/:id`        | `vessel:read`                      | `location` GeoJSON `Point`                                                                             |
 | POST / PATCH / DELETE | `/ports`, `/ports/:id`                                                | `reference:write`                  | snapshots carry port ids only: no republish                                                            |
-| GET                   | `/registry/search?q&page&pageSize`                                    | `vessel:read`                      | name prefix/substring, IMO prefix, MMSI prefix                                                         |
+| GET                   | `/registry/search?q&match=auto\|prefix\|contains&page&pageSize`       | `vessel:read`                      | name, IMO and MMSI over indexes, see [registry search](#registry-search)                               |
 | GET                   | `/registry/:imoOrMmsi`                                                | `vessel:read`                      | 9 digits = MMSI, 7 digits or `IMO1234567` = IMO                                                        |
 | GET                   | `/fleet/methodology`                                                  | any signed-in user                 | methods implemented here (§17); the gateway does not route `/api/v2/fleet` yet (spec §12)              |
 | GET                   | `/health/live`, `/health/ready`, `/metrics`, `/docs`, `/openapi.json` | public (not routed by the gateway) |                                                                                                        |
 
 Deleting a reference row still used by a vessel is `409 REFERENCE_IN_USE`.
+
+- **PATCH bodies** accept any subset of the create fields. `null` clears a nullable member only —
+  vessels `imo`, `flag`, `builtYear`, `firstFuelFormulaId`; vessel types `capacityFixed`, `icon`,
+  `source`; engines and fuel formulas `code`, `source`; fuels `source`; ports
+  `administrativeLocation`, `radiusM`, `source` — and is `400 VALIDATION_FAILED` on the field for
+  every other member (`PatchType` in `src/modules/common/validation.ts`). Optional create members
+  that are not nullable (`status`, `engines`, `portIds`, `orgId`, `legacyId`) refuse `null` too. As a
+  second safeguard a PostgreSQL NOT NULL violation is answered `400 VALIDATION_FAILED` (and logged
+  as a warning) instead of `500`.
+- **Pages**: `page` 1–1 000 000, `pageSize` 1–100 (default 20) on every list.
+- **`:mmsi`** must be exactly nine digits forming a valid MMSI; anything else (`12`, `-5`, `1e5`,
+  `0525005223`, values beyond `integer`) is `400 VALIDATION_FAILED` on `mmsi`, never `404`/`500`.
+
+### Registry search
+
+`GET /registry/search?q=` matches without trigram indexes (spec §6 forbids `CREATE EXTENSION`). Each
+arm is its own `UNION ALL` branch, so PostgreSQL answers it with an index range scan
+([`registrySearchSql`](src/modules/registry/registry.repository.ts)):
+
+| Arm                                | Predicate                         | Index                           | Rank  |
+| ---------------------------------- | --------------------------------- | ------------------------------- | ----- |
+| name prefix                        | `lower(name) LIKE 'q%'`           | `registry_particulars_name_idx` | 0 / 1 |
+| IMO prefix (1–7 digits, `IMO…`)    | `imo LIKE 'digits%'`              | `registry_particulars_imo_idx`  | 0 / 1 |
+| MMSI range (1–9 digits)            | `mmsi BETWEEN digits·10^k AND …9` | `registry_particulars_mmsi_key` | 0 / 1 |
+| substring (text of ≥ 3 characters) | `name ILIKE '%q%'`                | none — sequential scan          | 2     |
+
+Exact matches (name, IMO number, 9-digit MMSI) rank 0, prefix matches 1, substring matches 2; then
+name and MMSI. An entry matched by several arms appears once with its best rank, and the total is
+counted from the same set. Numeric queries are identity lookups and never run the substring arm.
+`match` decides the substring arm for text queries: `prefix` never, `contains` always, `auto` (the
+default) only when the indexed arms match fewer entries than `pageSize` — a decision that depends
+on the query and the page size only, so every page reports the same `total`.
+`test/registry.int.test.ts` checks the plans (`EXPLAIN`) on 20 000 rows.
 
 ### Safe first-fuel-formula grammar
 
@@ -207,23 +249,29 @@ call     = [ "Math." ] ( exp | log | ln | sqrt | pow | abs | min | max ) "(" sum
 ```
 
 Anything else (`process.exit(1)`, `Math.random()`, `speed`, `;`, quotes, `%`, wrong arity, more
-than 500 characters or 32 nesting levels) is `400 VALIDATION_FAILED` with the field and the
-position of the problem.
+than 500 characters, more than 32 nesting levels — parentheses, calls, signs and exponents, each
+`^`/`**` one level deeper as in the emission evaluator — or a non-finite number such as `1e999`) is
+`400 VALIDATION_FAILED` with the field and the position of the problem. The limits are at or below
+the emission evaluator's (1000 characters, 64 levels), so every stored formula compiles there: the
+shared corpus in [`fuel-formula.spec.ts`](src/domain/fuel-formula.spec.ts) records emission's
+verdict per entry, and a differential run of 300 000 random formulas against
+`services/emission/src/domain/expression/evaluator.ts` found none that fleet accepts and emission
+refuses (fleet refuses 177 that emission accepts, all beyond fleet's stricter limits).
 
 ### Error codes
 
-| Status | Code                                                                                                                                                                         | When                                                                                                                                                                                                |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_FAILED`                                                                                                                                                          | DTO validation (`errors[]` with `field`), unknown referenced ids (`typeId`, `engines.0.engineId`, `portIds.1`), engine role/kind mismatch, unsafe formula, malformed `:id` / `:mmsi` / registry key |
-| 401    | `UNAUTHORIZED`                                                                                                                                                               | missing or invalid access token                                                                                                                                                                     |
-| 403    | `FORBIDDEN`                                                                                                                                                                  | missing permission, or the vessel/organization belongs to another tenant                                                                                                                            |
-| 403    | `ORGANIZATION_REQUIRED`                                                                                                                                                      | creating a vessel without an active organization                                                                                                                                                    |
-| 403    | `PLATFORM_ADMIN_REQUIRED`                                                                                                                                                    | `orgId`/`legacyId` on writes, republish                                                                                                                                                             |
-| 404    | `VESSEL_NOT_FOUND`, `VESSEL_TYPE_NOT_FOUND`, `FUEL_NOT_FOUND`, `ENGINE_NOT_FOUND`, `FUEL_FORMULA_NOT_FOUND`, `PORT_NOT_FOUND`, `REGISTRY_ENTRY_NOT_FOUND`, `PHOTO_NOT_FOUND` |                                                                                                                                                                                                     |
-| 409    | `MMSI_ALREADY_EXISTS`, `IMO_ALREADY_EXISTS`, `LEGACY_ID_ALREADY_EXISTS`, `CODE_ALREADY_EXISTS`, `REFERENCE_IN_USE`                                                           |                                                                                                                                                                                                     |
-| 413    | `PAYLOAD_TOO_LARGE`                                                                                                                                                          | photo over 5 MB                                                                                                                                                                                     |
-| 415    | `UNSUPPORTED_MEDIA_TYPE`                                                                                                                                                     | not multipart, or the file is not JPEG/PNG/WebP                                                                                                                                                     |
-| 503    | `SERVICE_UNAVAILABLE`                                                                                                                                                        | object storage unreachable during an upload                                                                                                                                                         |
+| Status | Code                                                                                                                                                                         | When                                                                                                                                                                                                                                                                                                             |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_FAILED`                                                                                                                                                          | DTO validation (`errors[]` with `field`, one entry per failed constraint), `null` for a required member, `page` > 1 000 000, unknown referenced ids (`typeId`, `engines.0.engineId`, `portIds.1`), engine role/kind mismatch, unsafe formula, malformed `:id` / `:mmsi` (not exactly nine digits) / registry key |
+| 401    | `UNAUTHORIZED`                                                                                                                                                               | missing or invalid access token                                                                                                                                                                                                                                                                                  |
+| 403    | `FORBIDDEN`                                                                                                                                                                  | missing permission, or the vessel/organization belongs to another tenant                                                                                                                                                                                                                                         |
+| 403    | `ORGANIZATION_REQUIRED`                                                                                                                                                      | creating a vessel without an active organization                                                                                                                                                                                                                                                                 |
+| 403    | `PLATFORM_ADMIN_REQUIRED`                                                                                                                                                    | `orgId`/`legacyId` on writes, republish                                                                                                                                                                                                                                                                          |
+| 404    | `VESSEL_NOT_FOUND`, `VESSEL_TYPE_NOT_FOUND`, `FUEL_NOT_FOUND`, `ENGINE_NOT_FOUND`, `FUEL_FORMULA_NOT_FOUND`, `PORT_NOT_FOUND`, `REGISTRY_ENTRY_NOT_FOUND`, `PHOTO_NOT_FOUND` |                                                                                                                                                                                                                                                                                                                  |
+| 409    | `MMSI_ALREADY_EXISTS`, `IMO_ALREADY_EXISTS`, `LEGACY_ID_ALREADY_EXISTS`, `CODE_ALREADY_EXISTS`, `REFERENCE_IN_USE`                                                           |                                                                                                                                                                                                                                                                                                                  |
+| 413    | `PAYLOAD_TOO_LARGE`                                                                                                                                                          | photo over 5 MB                                                                                                                                                                                                                                                                                                  |
+| 415    | `UNSUPPORTED_MEDIA_TYPE`                                                                                                                                                     | not multipart, or the file is not JPEG/PNG/WebP                                                                                                                                                                                                                                                                  |
+| 503    | `SERVICE_UNAVAILABLE`                                                                                                                                                        | object storage unreachable during an upload                                                                                                                                                                                                                                                                      |
 
 ## Events
 
@@ -255,7 +303,13 @@ of each vessel, so several replicas share the work without reordering a vessel's
 publishes them concurrently and records the outcome in the same transaction. A failure reschedules
 the row with exponential backoff and jitter (1 s · 2^(n−1), capped at `OUTBOX_MAX_BACKOFF_MS`) and
 blocks only its own vessel; a payload that no longer validates is parked (`failed_at`). Commits wake
-the relay immediately; otherwise it polls every `OUTBOX_POLL_INTERVAL_MS`.
+the relay immediately; otherwise it polls every `OUTBOX_POLL_INTERVAL_MS`. Two replicas sharing a
+backlog of several rows per vessel are tested to deliver every vessel's snapshots in `seq` order
+without gaps or duplicates (observed on core NATS, which sees every publication; the stream keeps
+only the latest per vessel), also while vessel writes race a reference cascade. The pass keeps its
+transaction (row locks on the claimed outbox rows only) open while it publishes: writers are never
+blocked, other replicas skip the rows, and the wait is bounded by the JetStream request timeout
+(10 s) — see [known limitations](#known-limitations).
 
 ## Configuration
 
@@ -333,18 +387,25 @@ DOCKER_BUILDKIT=1 docker build --secret id=npmrc,src=$HOME/.npmrc -t ais-its-fle
 ## Testing
 
 - `pnpm test` — unit tests next to the code (`src/**/*.spec.ts`): snapshot mapping, formula
-  grammar, tenancy view selection and DTO mapping, engine assignment rules, photo magic bytes,
-  registry key/search planning and legacy mapping, retry backoff, seeds (values, sources,
-  formulas in the grammar), configuration and `.env.example`, methodology catalog ids.
+  grammar (incl. the corpus shared with the emission evaluator and power-chain depth), tenancy
+  view selection and DTO mapping, `null` handling of every PATCH/create DTO, page bounds, the
+  `:mmsi` parser, the NOT NULL safeguard, the deadlock retry of `inTransaction`, engine assignment
+  rules, photo magic bytes, registry key/search planning and legacy mapping, retry backoff, seeds
+  (values, sources, formulas in the grammar), configuration and `.env.example`, methodology
+  catalog ids.
 - `pnpm test:int` — integration tests (`test/*.int.test.ts`) against real TimescaleDB/PostGIS, NATS
   and RustFS containers (kit `startTestInfra`, signed test JWTs from `createTestJwtIssuer`):
-  vessel CRUD and validation errors, tenancy isolation (two organizations; org admin, fleet manager,
-  viewer, authority, super admin), snapshot publication consumed from NATS (Nats-Msg-Id, commit
-  order, cascades on fuel/type/engine/formula changes, tombstones, republish, retry with backoff,
-  parked rows, boot republish with two replicas), seed idempotency and restoration, photo
-  upload/download/replace/delete against S3, registry import and search, reference data and ports
-  with GeoJSON. Docker is required; set `TESTCONTAINERS_RYUK_DISABLED=true` where Ryuk is not
-  available (the global setup stops every container).
+  vessel CRUD and validation errors (`null` in every PATCH, malformed `:mmsi`, page bounds),
+  tenancy isolation (two organizations; org admin, fleet manager, viewer, authority, super admin),
+  snapshot publication consumed from NATS (Nats-Msg-Id, commit order, cascades on
+  fuel/type/engine/formula changes, tombstones, republish, retry with backoff, parked rows, boot
+  republish, two relays sharing a backlog, vessel writes racing a cascade, a cascade over 70 000
+  vessels in a rolled-back transaction), the engine kind-change race (deterministic, with a
+  share-locked fit in flight), seed idempotency and restoration, photo
+  upload/download/replace/delete against S3, registry import, ranking, match modes and query plans,
+  reference data and ports with GeoJSON, and the schema mirror. Docker is required; set
+  `TESTCONTAINERS_RYUK_DISABLED=true` where Ryuk is not available (the global setup stops every
+  container).
 
 ## Operations
 
@@ -359,7 +420,9 @@ DOCKER_BUILDKIT=1 docker build --secret id=npmrc,src=$HOME/.npmrc -t ais-its-fle
     `reference_change`, `republish`;
   - `aisits_fleet_photo_operations_total{operation,outcome}`.
 - **Logs**: pino JSON with `requestId`, `traceId` and the principal id; the relay logs every retry
-  (`warn`) and every parked row (`error`).
+  (`warn`) and every parked row (`error`); a transaction re-run after a deadlock logs
+  `Transaction failed with SQLSTATE 40P01, re-running it` (`warn`); a NOT NULL violation answered
+  as `400` logs `NOT NULL violation on column …` (`warn`: a DTO lets `null` through and needs a fix).
 - **Troubleshooting**
   - _Consumers see stale vessel data_: check `aisits_outbox_pending` / `…oldest_pending_seconds`
     and `SELECT id, attempts, last_error, next_attempt_at FROM fleet.outbox WHERE published_at IS NULL`;
@@ -370,7 +433,11 @@ DOCKER_BUILDKIT=1 docker build --secret id=npmrc,src=$HOME/.npmrc -t ais-its-fle
     republish per vessel); consumers keep the newest snapshot by `updatedAt`.
   - _Photo URLs do not load in the browser_: `S3_PUBLIC_ENDPOINT` must be the host browsers reach
     (signatures are bound to it); the bucket stays private.
-  - _`409 REFERENCE_IN_USE` on delete_: reassign the vessels first (`PATCH /vessels/:id`).
+  - _`409 REFERENCE_IN_USE` on delete_: reassign the vessels first (`PATCH /vessels/:id`); the same
+    code on an engine `kind` change means vessels fit the engine in its current role.
+  - _Slow registry searches_: only text queries with `match=contains`, or `auto` queries whose prefix
+    matches do not fill a page, scan `registry_particulars`; check the plan with
+    `EXPLAIN` of `registrySearchSql` and keep the table `ANALYZE`d after large imports.
 
 ## Seeds and data provenance
 
@@ -421,6 +488,27 @@ the owning organization; ship types gain `capacity_fixed`; reference rows in use
 (the legacy left dangling references); snapshots are published as events instead of being joined
 on read.
 
+## Known limitations
+
+- **Relay transaction during publication** — a relay pass holds its transaction (locks on the
+  claimed outbox rows only) while it publishes; during a NATS outage one pooled connection stays
+  idle in transaction for up to the 10 s JetStream request timeout per pass. Kept: the lock is what
+  keeps a vessel's snapshots in order across replicas without a lease protocol.
+- **Orphaned photo objects** — the S3 object of a replaced or deleted photo is removed after the
+  commit; when that delete fails the object stays (logged, `aisits_fleet_photo_operations_total`
+  `outcome="failed"`). Objects are private and unreferenced; a sweeper or bucket lifecycle rule is a
+  follow-up.
+- **Photos in memory** — an upload (≤ 5 MB, enforced by the multipart limit) is buffered before the
+  magic-byte check and the `PutObject` with a known length.
+- **Boot republish on several replicas** — each replica started with `FLEET_REPUBLISH_ON_BOOT=true`
+  enqueues every snapshot again; harmless (identical data, consumers keep the newest `updatedAt`).
+- **Image size** — the runtime image carries the production dependencies (AWS SDK, OpenTelemetry,
+  NestJS); it is not trimmed further.
+- **No `seed:demo`** — the case-study reference rows are seeded; the Dharma Ferry VIII vessel is
+  created through the API for an organization.
+- **Seed values** — ship-type and fuel values come from verified IMO text extracts and must be
+  re-verified against the official resolutions before regulatory use (each row's `source` says so).
+
 ## Methodology & references
 
 This service implements no computation of its own beyond the formula grammar; it is the system of
@@ -447,5 +535,6 @@ service. Hull-form fields are documented for the Holtrop–Mennen chain of the e
 ## Contributing
 
 Conventional commits (commitlint + Husky). Migrations are forward-only: add
-`migrations/NNNN_<change>.sql` and mirror it in `src/db/schema.ts`. Regenerate `openapi.json` with
+`migrations/NNNN_<change>.sql` and mirror it in `src/db/schema.ts` (the schema mirror test fails
+otherwise). Regenerate `openapi.json` with
 `pnpm openapi` when routes or DTOs change. See [CHANGELOG.md](CHANGELOG.md).

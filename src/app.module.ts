@@ -3,8 +3,10 @@ import { AuthModule } from '@darmawanweb/ais-its-nest/auth';
 import { DatabaseModule } from '@darmawanweb/ais-its-nest/db';
 import { NatsModule } from '@darmawanweb/ais-its-nest/nats';
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 
 import * as schema from './db/schema.js';
+import { NotNullViolationInterceptor } from './modules/common/not-null-violation.interceptor.js';
 import { EnginesModule } from './modules/engines/engines.module.js';
 import { FuelFormulasModule } from './modules/fuel-formulas/fuel-formulas.module.js';
 import { FuelsModule } from './modules/fuels/fuels.module.js';
@@ -40,6 +42,10 @@ import { VesselsModule } from './modules/vessels/vessels.module.js';
     FuelFormulasModule,
     PortsModule,
     RegistryModule,
+  ],
+  providers: [
+    // NOT NULL violations → 400 VALIDATION_FAILED (safeguard behind the DTOs).
+    { provide: APP_INTERCEPTOR, useClass: NotNullViolationInterceptor },
   ],
 })
 export class AppModule {}

@@ -3,7 +3,6 @@ import {
   ApiProperty,
   ApiPropertyOptional,
   IntersectionType,
-  PartialType,
 } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -22,6 +21,7 @@ import {
 
 import {
   IsLonLat,
+  PatchType,
   ReferenceListQuery,
   trimString,
   upperTrimString,
@@ -98,8 +98,11 @@ export class CreatePortDto {
   readonly source?: string | null;
 }
 
-/** `PATCH /ports/:id`: any subset of the create fields. */
-export class UpdatePortDto extends PartialType(CreatePortDto) {}
+/**
+ * `PATCH /ports/:id`: any subset of the create fields; `null` clears
+ * `administrativeLocation`, `radiusM` and `source` only.
+ */
+export class UpdatePortDto extends PatchType(CreatePortDto) {}
 
 /** Query of `GET /ports`: page, search and an optional `bbox`. */
 export class ListPortsQuery extends IntersectionType(

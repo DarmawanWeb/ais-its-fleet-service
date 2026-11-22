@@ -7,6 +7,7 @@ import {
   bodyOf,
   createReferenceSet,
   createVessel,
+  fieldsOf,
   problemOf,
   type ReferenceSet,
   uniqueMmsi,
@@ -260,19 +261,84 @@ describe('vessels: CRUD, validation and tenancy', () => {
         400,
       ).code,
     ).toBe('VALIDATION_FAILED');
-    expect(
-      problemOf(
+    // Anything but exactly nine digits forming an MMSI is a field error, never
+    // a 404 or a 500 (regression: ParseIntPipe let these through).
+    for (const key of [
+      'abc',
+      '2147483648',
+      '99999999999999999999',
+      '12',
+      '-5',
+      '1e5',
+      '0525005223',
+      '052500522',
+      '5250052.3',
+    ]) {
+      const problem = problemOf(
         await service.request(
-          orgA.viewer,
+          orgB.viewer,
           'GET',
-          '/api/v2/vessels/by-mmsi/abc',
+          `/api/v2/vessels/by-mmsi/${encodeURIComponent(key)}`,
         ),
         400,
-      ).code,
-    ).toBe('VALIDATION_FAILED');
+      );
+      expect(problem.code, key).toBe('VALIDATION_FAILED');
+      expect(fieldsOf(problem), key).toEqual(['mmsi']);
+    }
     expect(
       (await service.request(null, 'GET', '/api/v2/vessels')).statusCode,
     ).toBe(401);
+  });
+
+  it('refuses null for required members of a PATCH and lets it clear nullable ones', async () => {
+    const vessel = await createVessel(service, orgA.admin, references);
+    const url = `/api/v2/vessels/${vessel.id}`;
+    // Regression: these reached NOT NULL columns and answered 500.
+    for (const field of [
+      'name',
+      'mmsi',
+      'typeId',
+      'fuelId',
+      'status',
+      'annualVoyagePercentage',
+    ]) {
+      const problem = problemOf(
+        await service.request(orgA.admin, 'PATCH', url, { [field]: null }),
+        400,
+      );
+      expect(problem.code, field).toBe('VALIDATION_FAILED');
+      expect(fieldsOf(problem), field).toEqual([field]);
+    }
+    const cleared = bodyOf<VesselJson>(
+      await service.request(orgA.admin, 'PATCH', url, {
+        imo: null,
+        flag: null,
+        builtYear: null,
+        firstFuelFormulaId: null,
+      }),
+      200,
+    );
+    expect(cleared).toMatchObject({
+      imo: null,
+      flag: null,
+      builtYear: null,
+      firstFuelFormula: null,
+      name: 'Dharma Ferry VIII',
+      status: 'active',
+    });
+    // Optional create members that are not nullable refuse null as well.
+    for (const field of ['status', 'engines', 'portIds', 'orgId']) {
+      const problem = problemOf(
+        await service.request(
+          orgA.admin,
+          'POST',
+          '/api/v2/vessels',
+          vesselBody(references, { [field]: null }),
+        ),
+        400,
+      );
+      expect(fieldsOf(problem), field).toEqual([field]);
+    }
   });
 
   it('creates vessels only in the active organization unless platform administrator', async () => {
@@ -573,5 +639,18 @@ describe('vessels: CRUD, validation and tenancy', () => {
       await service.request(orgC.viewer, 'GET', '/api/v2/vessels?pageSize=101'),
       400,
     );
+    // Regression: a page beyond the OFFSET range answered 500.
+    for (const page of ['99999999999999999999', '1000001']) {
+      const problem = problemOf(
+        await service.request(
+          orgC.viewer,
+          'GET',
+          `/api/v2/vessels?page=${page}`,
+        ),
+        400,
+      );
+      expect(fieldsOf(problem)).toEqual(['page']);
+    }
+    expect((await list('page=1000000')).data).toEqual([]);
   });
 });

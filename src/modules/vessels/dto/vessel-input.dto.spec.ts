@@ -3,8 +3,21 @@ import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
 
 import { SAMPLE_DIMENSIONS } from '../../../../test/fixtures/sample-vessel.js';
-import { CreateFuelFormulaDto } from '../../fuel-formulas/dto/fuel-formula.dto.js';
-import { CreateVesselDto, UpdateVesselDto } from './vessel-input.dto.js';
+import { MAX_PAGE, ReferenceListQuery } from '../../common/validation.js';
+import { UpdateEngineDto } from '../../engines/dto/engine.dto.js';
+import {
+  CreateFuelFormulaDto,
+  UpdateFuelFormulaDto,
+} from '../../fuel-formulas/dto/fuel-formula.dto.js';
+import { UpdateFuelDto } from '../../fuels/dto/fuel.dto.js';
+import { UpdatePortDto } from '../../ports/dto/port.dto.js';
+import { RegistrySearchQuery } from '../../registry/dto/registry.dto.js';
+import { UpdateVesselTypeDto } from '../../vessel-types/dto/vessel-type.dto.js';
+import {
+  CreateVesselDto,
+  ListVesselsQuery,
+  UpdateVesselDto,
+} from './vessel-input.dto.js';
 
 /** Validates like the kit's ValidationPipe (whitelist, forbidNonWhitelisted). */
 async function errorsOf(
@@ -117,6 +130,141 @@ describe('UpdateVesselDto', () => {
     ).toEqual({
       dimensions: ['whitelistValidation'],
     });
+  });
+
+  it('refuses null for required members and lets it clear nullable ones', async () => {
+    // Regression: PartialType's @IsOptional() let null reach NOT NULL columns (500).
+    for (const field of [
+      'mmsi',
+      'name',
+      'typeId',
+      'fuelId',
+      'status',
+      'annualVoyagePercentage',
+      'orgId',
+    ]) {
+      expect(
+        Object.keys(await errorsOf(UpdateVesselDto, { [field]: null })),
+      ).toEqual([field]);
+    }
+    expect(
+      await errorsOf(UpdateVesselDto, {
+        imo: null,
+        flag: null,
+        builtYear: null,
+        firstFuelFormulaId: null,
+      }),
+    ).toEqual({});
+  });
+});
+
+describe('CreateVesselDto — optional members that are not nullable', () => {
+  it('refuses null for status, engines, portIds, orgId and legacyId', async () => {
+    for (const field of ['status', 'engines', 'portIds', 'orgId', 'legacyId']) {
+      expect(
+        Object.keys(
+          await errorsOf(CreateVesselDto, { ...VALID, [field]: null }),
+        ),
+      ).toEqual([field]);
+    }
+    // Absent is fine (defaults apply).
+    const { engines: _engines, portIds: _portIds, ...minimal } = VALID;
+    expect(await errorsOf(CreateVesselDto, minimal)).toEqual({});
+  });
+});
+
+describe('PATCH bodies of the reference data', () => {
+  const cases: readonly {
+    readonly type: new () => object;
+    readonly required: readonly string[];
+    readonly nullable: readonly string[];
+  }[] = [
+    {
+      type: UpdateVesselTypeDto,
+      required: ['code', 'name', 'capacityUnit', 'a', 'c', 'd'],
+      nullable: ['capacityFixed', 'icon', 'source'],
+    },
+    {
+      type: UpdateFuelDto,
+      required: [
+        'code',
+        'name',
+        'carbonContent',
+        'conversionFactor',
+        'density',
+      ],
+      nullable: ['source'],
+    },
+    {
+      type: UpdateEngineDto,
+      required: ['kind', 'name', 'rpm', 'powerKw', 'sfoc'],
+      nullable: ['code', 'source'],
+    },
+    {
+      type: UpdateFuelFormulaDto,
+      required: ['name', 'mainEngineFormula', 'auxiliaryEngineFormula'],
+      nullable: ['code', 'source'],
+    },
+    {
+      type: UpdatePortDto,
+      required: ['name', 'code', 'location'],
+      nullable: ['administrativeLocation', 'radiusM', 'source'],
+    },
+  ];
+
+  it.each(cases)(
+    '$type.name refuses null for required members',
+    async (entry) => {
+      for (const field of entry.required) {
+        expect(
+          Object.keys(await errorsOf(entry.type, { [field]: null })),
+        ).toEqual([field]);
+      }
+    },
+  );
+
+  it.each(cases)(
+    '$type.name lets null clear nullable members',
+    async (entry) => {
+      expect(
+        await errorsOf(
+          entry.type,
+          Object.fromEntries(entry.nullable.map((field) => [field, null])),
+        ),
+      ).toEqual({});
+    },
+  );
+});
+
+describe('page queries', () => {
+  it.each([ListVesselsQuery, ReferenceListQuery])(
+    '%o bounds page to 1..MAX_PAGE',
+    async (type) => {
+      expect(await errorsOf(type, { page: String(MAX_PAGE) })).toEqual({});
+      expect(await errorsOf(type, { page: String(MAX_PAGE + 1) })).toEqual({
+        page: ['max'],
+      });
+      // Regression: a 20-digit page overflowed the OFFSET (500).
+      expect(await errorsOf(type, { page: '99999999999999999999' })).toEqual({
+        page: ['max'],
+      });
+      expect(await errorsOf(type, { page: '0' })).toEqual({ page: ['min'] });
+      expect(await errorsOf(type, { page: '1.5' })).toEqual({
+        page: ['isInt'],
+      });
+      expect(await errorsOf(type, { pageSize: '101' })).toEqual({
+        pageSize: ['max'],
+      });
+    },
+  );
+
+  it('bounds the registry search page as well', async () => {
+    expect(
+      await errorsOf(RegistrySearchQuery, { q: 'dharma', page: '2000000' }),
+    ).toEqual({ page: ['max'] });
+    expect(
+      await errorsOf(RegistrySearchQuery, { q: 'dharma', match: 'fuzzy' }),
+    ).toEqual({ match: ['isIn'] });
   });
 });
 

@@ -1,11 +1,16 @@
 import { PageQueryDto } from '@darmawanweb/ais-its-nest/http';
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, type TransformFnParams } from 'class-transformer';
+import type { Type as ClassType } from '@nestjs/common';
+import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Transform, type TransformFnParams, Type } from 'class-transformer';
 import {
+  IsInt,
   IsOptional,
   IsString,
   Length,
+  Max,
+  Min,
   registerDecorator,
+  ValidateIf,
   type ValidationArguments,
   type ValidationOptions,
 } from 'class-validator';
@@ -113,8 +118,63 @@ export function IsLonLat(options?: ValidationOptions): PropertyDecorator {
   };
 }
 
+/**
+ * A member that may be absent but is never `null` (a NOT NULL column):
+ * validation is skipped only when the value is `undefined`, so `null` fails
+ * the member's other validators with `400 VALIDATION_FAILED`.
+ * `@IsOptional()` skips `null` as well — use it only for nullable members.
+ */
+export function IsOptionalNonNull(
+  options?: ValidationOptions,
+): PropertyDecorator {
+  return ValidateIf(
+    (_object: object, value: unknown) => value !== undefined,
+    options,
+  );
+}
+
+/**
+ * `PartialType` for PATCH bodies: every member of `classRef` becomes
+ * optional, but a member that is present is validated, `null` included.
+ * `null` therefore passes only for members the create DTO marks
+ * `@IsOptional()` (nullable columns, where it clears the value); for every
+ * other member it is `400 VALIDATION_FAILED` instead of reaching a NOT NULL
+ * column. (`PartialType`'s default adds `@IsOptional()` to every member,
+ * which lets `null` through everywhere.)
+ */
+export function PatchType<T>(classRef: ClassType<T>): ClassType<Partial<T>> {
+  return PartialType(classRef, { skipNullProperties: false });
+}
+
+/**
+ * Highest accepted `page`: keeps `(page − 1) · pageSize` far inside the
+ * range of a PostgreSQL `bigint` OFFSET (the kit's `PageQueryDto` has no
+ * upper bound, so a huge page was a `500` instead of a `400`).
+ */
+export const MAX_PAGE = 1_000_000;
+
+/**
+ * The kit's page query (`page` ≥ 1, `pageSize` 1–100) with `page` ≤
+ * {@link MAX_PAGE}; base of every page-based list of the service.
+ */
+export class BoundedPageQueryDto extends PageQueryDto {
+  // Re-declares every validator of `page`: class-validator replaces the
+  // inherited constraints of a member that the subclass decorates.
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: MAX_PAGE,
+    default: 1,
+    type: 'integer',
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE)
+  override readonly page: number = 1;
+}
+
 /** Query of the reference-data lists: page + case-insensitive name/code search. */
-export class ReferenceListQuery extends PageQueryDto {
+export class ReferenceListQuery extends BoundedPageQueryDto {
   @ApiPropertyOptional({
     description: 'Case-insensitive substring of the name or code',
     maxLength: 120,

@@ -92,21 +92,30 @@ export class VesselAggregatesRepository {
     if (rows.length === 0) return new Map();
 
     const vesselIds = rows.map((row) => row.vessel.id);
-    const [types, fuelRows, formulas, fitted, calls] = await Promise.all([
-      this.types(db, unique(rows.map((row) => row.vessel.typeId)), lock),
-      this.fuels(db, unique(rows.map((row) => row.vessel.fuelId)), lock),
-      this.formulas(
-        db,
-        unique(rows.map((row) => row.vessel.firstFuelFormulaId)),
-        lock,
-      ),
-      this.fittedEngines(db, vesselIds, lock),
-      db
-        .select()
-        .from(vesselPorts)
-        .where(inArray(vesselPorts.vesselId, vesselIds))
-        .orderBy(asc(vesselPorts.vesselId), asc(vesselPorts.position)),
-    ]);
+    // One query after the other: inside a transaction `db` is bound to a
+    // single client, which runs queries strictly in sequence (pg deprecates
+    // overlapping client.query() calls and pg@9 will refuse them).
+    const types = await this.types(
+      db,
+      unique(rows.map((row) => row.vessel.typeId)),
+      lock,
+    );
+    const fuelRows = await this.fuels(
+      db,
+      unique(rows.map((row) => row.vessel.fuelId)),
+      lock,
+    );
+    const formulas = await this.formulas(
+      db,
+      unique(rows.map((row) => row.vessel.firstFuelFormulaId)),
+      lock,
+    );
+    const fitted = await this.fittedEngines(db, vesselIds, lock);
+    const calls = await db
+      .select()
+      .from(vesselPorts)
+      .where(inArray(vesselPorts.vesselId, vesselIds))
+      .orderBy(asc(vesselPorts.vesselId), asc(vesselPorts.position));
 
     const result = new Map<string, VesselAggregate>();
     for (const { vessel, dimensions } of rows) {
@@ -136,28 +145,28 @@ export class VesselAggregatesRepository {
   /**
    * Locks (`FOR UPDATE`, in id order) the vessels that embed a reference
    * row and advances their `updated_at`, so the snapshots enqueued next
-   * carry a newer `updatedAt` than any earlier one.
+   * carry a newer `updatedAt` than any earlier one. One statement without an
+   * id list, so a cascade over any number of vessels stays within the
+   * 65 535 bind parameters of the PostgreSQL protocol.
    *
-   * @returns the ids of the affected vessels
+   * @returns the ids of the affected vessels, in id order
    */
   async touchVesselsUsing(
     db: FleetDb,
     filter: ReferenceFilter,
   ): Promise<string[]> {
-    const locked = await db
-      .select({ id: vessels.id })
-      .from(vessels)
-      .where(usingCondition(db, filter))
-      .orderBy(asc(vessels.id))
-      .for('update');
-    const ids = locked.map((row) => row.id);
-    if (ids.length > 0) {
-      await db
-        .update(vessels)
-        .set({ updatedAt: sql`clock_timestamp()` })
-        .where(inArray(vessels.id, ids));
-    }
-    return ids;
+    const { rows } = await db.execute<{ id: string }>(sql`
+      WITH locked AS (
+        SELECT ${vessels.id} AS id FROM ${vessels}
+         WHERE ${usingCondition(db, filter)}
+         ORDER BY ${vessels.id}
+           FOR UPDATE
+      )
+      UPDATE ${vessels} SET updated_at = clock_timestamp()
+        FROM locked
+       WHERE ${vessels.id} = locked.id
+      RETURNING locked.id`);
+    return rows.map((row) => row.id).sort();
   }
 
   /** Number of vessels that embed a reference row. */

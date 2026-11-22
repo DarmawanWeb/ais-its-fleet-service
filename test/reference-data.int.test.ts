@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { PG_POOL, type Pool } from '@darmawanweb/ais-its-nest/db';
+import { waitFor } from '@darmawanweb/ais-its-nest/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -7,6 +9,7 @@ import {
   createReference,
   createReferenceSet,
   createVessel,
+  fieldsOf,
   problemOf,
   uniqueCode,
   uniquePortCode,
@@ -25,10 +28,12 @@ interface Page<T> {
 
 describe('reference data: vessel types, fuels, engines, fuel formulas, ports', () => {
   let service: TestService;
+  let pool: Pool;
   const org = newOrganization();
 
   beforeAll(async () => {
     service = await startTestService();
+    pool = service.app.get<unknown, Pool>(PG_POOL);
   });
 
   afterAll(async () => {
@@ -305,10 +310,7 @@ describe('reference data: vessel types, fuels, engines, fuel formulas, ports', (
     ]) {
       const problem = await refused({ mainEngineFormula: formula });
       expect(problem.code, formula).toBe('VALIDATION_FAILED');
-      expect(
-        problem.errors?.map((error) => error.field),
-        formula,
-      ).toEqual(['mainEngineFormula']);
+      expect(fieldsOf(problem), formula).toEqual(['mainEngineFormula']);
     }
     const both = await refused({
       mainEngineFormula: 'eval("1")',
@@ -419,6 +421,128 @@ describe('reference data: vessel types, fuels, engines, fuel formulas, ports', (
         409,
       ).code,
     ).toBe('CODE_ALREADY_EXISTS');
+  });
+
+  it('refuses null for required members of every PATCH and lets it clear nullable ones', async () => {
+    const references = await createReferenceSet(service);
+    const cases = [
+      [
+        'vessel-types',
+        references.typeId,
+        ['name', 'code', 'a', 'd', 'capacityUnit'],
+      ],
+      ['fuels', references.fuelId, ['name', 'density', 'conversionFactor']],
+      ['engines', references.mainEngineId, ['name', 'rpm', 'kind']],
+      [
+        'fuel-formulas',
+        references.formulaId,
+        ['name', 'mainEngineFormula', 'auxiliaryEngineFormula'],
+      ],
+      ['ports', references.portIds[0], ['location', 'name', 'code']],
+    ] as const;
+    // Regression: each of these answered 500 (NOT NULL violation or a
+    // TypeError on a null nested object).
+    for (const [path, id, fields] of cases) {
+      for (const field of fields) {
+        const problem = problemOf(
+          await service.request(SUPER_ADMIN, 'PATCH', `/api/v2/${path}/${id}`, {
+            [field]: null,
+          }),
+          400,
+        );
+        expect(problem.code, `${path} ${field}`).toBe('VALIDATION_FAILED');
+        expect(fieldsOf(problem), `${path} ${field}`).toEqual([field]);
+      }
+    }
+    const type = bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/vessel-types/${references.typeId}`,
+        { capacityFixed: null, icon: null, source: null },
+      ),
+      200,
+    );
+    expect(type).toMatchObject({
+      capacityFixed: null,
+      icon: null,
+      source: null,
+    });
+    const port = bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/ports/${references.portIds[0]}`,
+        { administrativeLocation: null, radiusM: null, source: null },
+      ),
+      200,
+    );
+    expect(port).toMatchObject({
+      administrativeLocation: null,
+      radiusM: null,
+      source: null,
+    });
+  });
+
+  it('never lets a kind change race a vessel fitting the engine in its old role', async () => {
+    const references = await createReferenceSet(service);
+    // A vessel without engines, so the open transaction below can fit the main engine.
+    const vessel = await createVessel(service, org.admin, references, {
+      engines: [],
+    });
+    const engineUrl = `/api/v2/engines/${references.mainEngineId}`;
+
+    // A vessel write in flight (as VesselsService.fitEngines does it): the
+    // engine is share-locked, its kind checked and the engine fitted as main.
+    const fitting = await pool.connect();
+    let open = false;
+    try {
+      await fitting.query('BEGIN');
+      open = true;
+      const { rows } = await fitting.query<{ kind: string }>(
+        'SELECT kind FROM engines WHERE id = $1 FOR SHARE',
+        [references.mainEngineId],
+      );
+      expect(rows[0]?.kind).toBe('main');
+      await fitting.query(
+        `INSERT INTO vessel_engines (vessel_id, engine_id, role, quantity, position)
+         VALUES ($1, $2, 'main', 1, 0)`,
+        [vessel.id, references.mainEngineId],
+      );
+
+      // The kind change starts while the fit is uncommitted …
+      const change = service.request(SUPER_ADMIN, 'PATCH', engineUrl, {
+        kind: 'auxiliary',
+      });
+      // … and waits for the engine row lock (regression: it counted 0 users
+      // before the fit committed and then changed the kind).
+      await waitFor(
+        async () => {
+          const waiting = await pool.query<{ count: number }>(
+            `SELECT count(*)::int AS count FROM pg_stat_activity
+              WHERE wait_event_type = 'Lock' AND usename = current_user
+                AND query ILIKE '%"engines"%' AND query ILIKE '%for update%'`,
+          );
+          return (waiting.rows[0]?.count ?? 0) > 0;
+        },
+        { message: 'the kind change never waited for the engine lock' },
+      );
+      await fitting.query('COMMIT');
+      open = false;
+
+      const problem = problemOf(await change, 409);
+      expect(problem.code).toBe('REFERENCE_IN_USE');
+    } finally {
+      if (open) await fitting.query('ROLLBACK');
+      fitting.release();
+    }
+
+    const { rows } = await pool.query<{ role: string; kind: string }>(
+      `SELECT ve.role, e.kind FROM vessel_engines ve JOIN engines e ON e.id = ve.engine_id
+        WHERE ve.vessel_id = $1`,
+      [vessel.id],
+    );
+    expect(rows).toEqual([{ role: 'main', kind: 'main' }]);
   });
 
   it('refuses to delete reference rows that vessels still use', async () => {

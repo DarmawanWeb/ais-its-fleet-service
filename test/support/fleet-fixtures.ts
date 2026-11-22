@@ -56,6 +56,13 @@ export function problemOf(
   return response.json();
 }
 
+/** The distinct fields of a problem's `errors` (one entry per failed constraint). */
+export function fieldsOf(problem: {
+  errors?: { field: string }[] | undefined;
+}): string[] {
+  return [...new Set((problem.errors ?? []).map((error) => error.field))];
+}
+
 /** Ids of the reference rows a test vessel points at. */
 export interface ReferenceSet {
   readonly typeId: string;

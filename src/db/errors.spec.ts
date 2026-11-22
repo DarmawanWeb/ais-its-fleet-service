@@ -3,14 +3,24 @@ import { describe, expect, it } from 'vitest';
 import {
   isForeignKeyViolation,
   isUniqueViolation,
+  notNullViolationColumn,
   PG_FOREIGN_KEY_VIOLATION,
+  PG_NOT_NULL_VIOLATION,
   PG_UNIQUE_VIOLATION,
   pgErrorOf,
 } from './errors.js';
 
 /** A driver error as `pg` throws it. */
-function driverError(code: string, constraint?: string): Error {
-  return Object.assign(new Error('duplicate key value'), { code, constraint });
+function driverError(
+  code: string,
+  constraint?: string,
+  column?: string,
+): Error {
+  return Object.assign(new Error('duplicate key value'), {
+    code,
+    constraint,
+    column,
+  });
 }
 
 describe('isUniqueViolation', () => {
@@ -50,11 +60,28 @@ describe('isForeignKeyViolation / pgErrorOf', () => {
     expect(pgErrorOf(wrapped)).toEqual({
       code: PG_FOREIGN_KEY_VIOLATION,
       constraint: 'vessels_fuel_id_fkey',
+      column: undefined,
     });
   });
 
   it('returns undefined without a driver error', () => {
     expect(isForeignKeyViolation(new Error('boom'))).toBe(false);
     expect(pgErrorOf('text')).toBeUndefined();
+  });
+});
+
+describe('notNullViolationColumn', () => {
+  it('names the column of a NOT NULL violation behind a wrapper', () => {
+    const wrapped = new Error('Failed query', {
+      cause: driverError(PG_NOT_NULL_VIOLATION, undefined, 'name'),
+    });
+    expect(notNullViolationColumn(wrapped)).toBe('name');
+  });
+
+  it('ignores other errors', () => {
+    expect(
+      notNullViolationColumn(driverError(PG_UNIQUE_VIOLATION, 'x', 'name')),
+    ).toBeUndefined();
+    expect(notNullViolationColumn(new Error('boom'))).toBeUndefined();
   });
 });

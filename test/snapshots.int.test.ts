@@ -1,12 +1,28 @@
 import { randomUUID } from 'node:crypto';
 
 import { newId } from '@darmawanweb/ais-its-contracts/domain';
-import { EVENT_TYPES } from '@darmawanweb/ais-its-contracts/events';
+import {
+  EVENT_TYPES,
+  parseEnvelope,
+  SUBJECT_FILTERS,
+  subjects,
+  type VesselSnapshotV1,
+} from '@darmawanweb/ais-its-contracts/events';
 import { PG_POOL, type Pool } from '@darmawanweb/ais-its-nest/db';
+import {
+  enqueueEvent,
+  EventPublisher,
+  NatsClient,
+} from '@darmawanweb/ais-its-nest/nats';
 import { waitFor } from '@darmawanweb/ais-its-nest/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import type { FleetDb } from '../src/db/database.js';
+import * as schema from '../src/db/schema.js';
 import { FleetOutboxRelay } from '../src/modules/snapshots/outbox-relay.js';
+import { VesselAggregatesRepository } from '../src/modules/snapshots/vessel-aggregates.repository.js';
 import { SAMPLE_DIMENSIONS } from './fixtures/sample-vessel.js';
 import {
   bodyOf,
@@ -506,5 +522,231 @@ describe('VesselSnapshotV1 publication through the transactional outbox', () => 
       [new Date(Date.parse(original.envelope.time))],
     );
     expect(enqueued.rows[0]?.count).toBeGreaterThanOrEqual(fleetSize);
+  });
+});
+
+/** A FLEET message as core NATS delivered it (every publication, whichever relay sent it). */
+interface DeliveredFleetMessage {
+  readonly subject: string;
+  readonly id: string;
+  readonly data: VesselSnapshotV1;
+}
+
+describe('several relay replicas and concurrent writers', () => {
+  let primary: TestService;
+  let replica: TestService;
+  let pool: Pool;
+  let references: ReferenceSet;
+  let subscription: ReturnType<NatsClient['connection']['subscribe']>;
+  const org = newOrganization();
+  /**
+   * Core NATS sees every publication in the order the server routed it: the
+   * stream keeps only the last message per vessel, so a JetStream consumer
+   * may skip superseded ones, a plain subscription never does.
+   */
+  const delivered: DeliveredFleetMessage[] = [];
+  const deliveredOf = (vesselId: string): DeliveredFleetMessage[] =>
+    delivered.filter(
+      (message) => message.subject === subjects.fleetVessel(vesselId),
+    );
+
+  beforeAll(async () => {
+    // One row per pass: both relays loop pass after pass over a backlog.
+    primary = await startTestService({ OUTBOX_BATCH_SIZE: '1' });
+    replica = await startTestService({ OUTBOX_BATCH_SIZE: '1' });
+    pool = primary.app.get<unknown, Pool>(PG_POOL);
+    references = await createReferenceSet(primary);
+    const connection = primary.app.get(NatsClient).connection;
+    subscription = connection.subscribe(SUBJECT_FILTERS.FLEET_VESSEL);
+    void (async () => {
+      for await (const message of subscription) {
+        const parsed = parseEnvelope(message.data);
+        if (!parsed.success) continue;
+        if (parsed.envelope.type !== EVENT_TYPES.FLEET_VESSEL_UPSERTED)
+          continue;
+        delivered.push({
+          subject: message.subject,
+          id: parsed.envelope.id,
+          data: parsed.envelope.data,
+        });
+      }
+    })();
+    await connection.flush();
+  });
+
+  afterAll(async () => {
+    subscription.unsubscribe();
+    await replica.app.close();
+    await primary.app.close();
+  });
+
+  it('lets two relays share a backlog and publishes every vessel in commit order without gaps', async () => {
+    const vessels = [];
+    for (let index = 0; index < 4; index += 1) {
+      vessels.push(await createVessel(primary, org.admin, references));
+    }
+    const initial = new Map<string, VesselSnapshotV1>();
+    for (const vessel of vessels) {
+      const first = await waitFor(() => deliveredOf(vessel.id)[0] ?? false, {
+        message: `no snapshot of ${vessel.id}`,
+      });
+      initial.set(vessel.id, first.data);
+    }
+    const spies = [primary, replica].map((service) =>
+      vi.spyOn(service.app.get(EventPublisher), 'publishEvent'),
+    );
+
+    // The backlog: six versions per vessel, interleaved, committed at once.
+    const enqueued = new Map<string, string[]>(
+      vessels.map((vessel) => [vessel.id, []]),
+    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (let version = 1; version <= 6; version += 1) {
+        for (const vessel of vessels) {
+          const base = initial.get(vessel.id);
+          if (base === undefined) throw new Error('missing snapshot');
+          const id = await enqueueEvent(
+            client,
+            EVENT_TYPES.FLEET_VESSEL_UPSERTED,
+            {
+              ...base,
+              name: `Backlog v${version}`,
+              updatedAt: new Date(
+                Date.parse(base.updatedAt) + version * 1000,
+              ).toISOString(),
+            },
+            { entityKey: vessel.id },
+          );
+          enqueued.get(vessel.id)?.push(id);
+        }
+      }
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    for (const service of [primary, replica]) {
+      service.app.get(FleetOutboxRelay).notify();
+    }
+
+    const backlog = new Set([...enqueued.values()].flat());
+    await waitFor(
+      () =>
+        delivered.filter((message) => backlog.has(message.id)).length >=
+        backlog.size,
+      { timeoutMs: 20_000, message: 'the backlog was not published' },
+    );
+    for (const vessel of vessels) {
+      // Exactly the enqueued rows, in seq order: none missing, none twice.
+      expect(
+        deliveredOf(vessel.id)
+          .map((message) => message.id)
+          .filter((id) => backlog.has(id)),
+      ).toEqual(enqueued.get(vessel.id));
+      expect(deliveredOf(vessel.id).at(-1)?.data.name).toBe('Backlog v6');
+    }
+    // Both replicas took part (rows of one vessel moved between them).
+    for (const spy of spies) {
+      const relayed = spy.mock.calls.filter((call) =>
+        backlog.has(String((call[2] as { id?: string } | undefined)?.id)),
+      );
+      expect(relayed.length).toBeGreaterThan(0);
+      spy.mockRestore();
+    }
+    const pending = await pool.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM outbox WHERE id = ANY($1::uuid[]) AND published_at IS NULL',
+      [[...backlog]],
+    );
+    expect(pending.rows[0]?.count).toBe(0);
+  });
+
+  it('keeps every vessel ordered and current while its writes race a reference cascade', async () => {
+    const shared = await createReferenceSet(primary);
+    const vessels = [];
+    for (let index = 0; index < 3; index += 1) {
+      vessels.push(await createVessel(primary, org.admin, shared));
+    }
+    const writerOf = (index: number): TestService =>
+      index % 2 === 0 ? primary : replica;
+    const rounds = 3;
+    for (let round = 1; round <= rounds; round += 1) {
+      // Vessel writes (vessel row, then the fuel share-locked) race a fuel
+      // change (fuel row, then every vessel burning it): deadlocks are retried.
+      const responses = await Promise.all([
+        ...vessels.map((vessel, index) =>
+          writerOf(index).request(
+            org.admin,
+            'PATCH',
+            `/api/v2/vessels/${vessel.id}`,
+            { name: `Race ${round}.${index}` },
+          ),
+        ),
+        writerOf(round).request(
+          SUPER_ADMIN,
+          'PATCH',
+          `/api/v2/fuels/${shared.fuelId}`,
+          { density: 0.8 + round / 100 },
+        ),
+      ]);
+      for (const response of responses) {
+        expect(response.statusCode, response.body).toBe(200);
+      }
+    }
+
+    for (const [index, vessel] of vessels.entries()) {
+      const detail = bodyOf<{ updatedAt: string }>(
+        await primary.request(org.admin, 'GET', `/api/v2/vessels/${vessel.id}`),
+        200,
+      );
+      expect(detail).toMatchObject({
+        name: `Race ${rounds}.${index}`,
+        fuel: { density: 0.8 + rounds / 100 },
+      });
+      // The last snapshot delivered is the current state, fuel included …
+      const last = await waitFor(
+        () => {
+          const tail = deliveredOf(vessel.id).at(-1);
+          return tail?.data.updatedAt === detail.updatedAt ? tail : false;
+        },
+        { timeoutMs: 20_000, message: `stale last snapshot of ${vessel.id}` },
+      );
+      expect(last.data).toMatchObject({
+        name: `Race ${rounds}.${index}`,
+        fuel: { density: 0.8 + rounds / 100 },
+      });
+      // … and no snapshot was delivered after a newer one.
+      const times = deliveredOf(vessel.id).map((message) =>
+        Date.parse(message.data.updatedAt),
+      );
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    }
+  });
+
+  it('cascades over more vessels than one statement may carry bind parameters', async () => {
+    const aggregates = primary.app.get(VesselAggregatesRepository);
+    const client = await pool.connect();
+    try {
+      // Rolled back: the 70 000 vessels are never visible to other tests.
+      await client.query('BEGIN');
+      const db: FleetDb = drizzle({ client, schema });
+      const fuelId = newId();
+      await db.execute(
+        sql`INSERT INTO fuels (id, code, name, carbon_content, conversion_factor, density)
+            VALUES (${fuelId}, ${uniqueCode('fuel')}, 'Cascade fuel (test)', 0.8744, 3.206, 0.86)`,
+      );
+      await db.execute(
+        sql`INSERT INTO vessels (id, mmsi, name, annual_voyage_percentage, type_id, fuel_id)
+            SELECT gen_random_uuid(), 990000000 + i, 'Cascade ' || i, 50, ${references.typeId}, ${fuelId}
+              FROM generate_series(1, 70000) AS i`,
+      );
+      // Regression: one bind parameter per vessel failed beyond 65 535.
+      const touched = await aggregates.touchVesselsUsing(db, { fuelId });
+      expect(touched).toHaveLength(70_000);
+      expect(new Set(touched).size).toBe(70_000);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
   });
 });

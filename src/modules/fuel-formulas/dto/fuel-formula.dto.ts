@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsOptional,
@@ -13,6 +13,7 @@ import type { FuelFormula } from '../../../domain/vessel.js';
 import {
   CODE_PATTERN,
   IsFuelFormula,
+  PatchType,
   trimString,
 } from '../../common/validation.js';
 
@@ -67,8 +68,8 @@ export class CreateFuelFormulaDto {
   readonly source?: string | null;
 }
 
-/** `PATCH /fuel-formulas/:id`: any subset of the create fields. */
-export class UpdateFuelFormulaDto extends PartialType(CreateFuelFormulaDto) {}
+/** `PATCH /fuel-formulas/:id`: any subset of the create fields; `null` clears `code` and `source` only. */
+export class UpdateFuelFormulaDto extends PatchType(CreateFuelFormulaDto) {}
 
 /** A first fuel formula on the wire. */
 export class FuelFormulaDto {

@@ -4,10 +4,15 @@ export const PG_UNIQUE_VIOLATION = '23505';
 /** SQLSTATE of a foreign key violation. */
 export const PG_FOREIGN_KEY_VIOLATION = '23503';
 
+/** SQLSTATE of a NOT NULL violation. */
+export const PG_NOT_NULL_VIOLATION = '23502';
+
 /** The PostgreSQL error fields this service looks at. */
 export interface PgErrorFields {
   readonly code: string;
   readonly constraint: string | undefined;
+  /** The column of a NOT NULL violation. */
+  readonly column: string | undefined;
 }
 
 /**
@@ -22,7 +27,11 @@ export function pgErrorOf(error: unknown): PgErrorFields | undefined {
         'constraint' in current && typeof current.constraint === 'string'
           ? current.constraint
           : undefined;
-      return { code: current.code, constraint };
+      const column =
+        'column' in current && typeof current.column === 'string'
+          ? current.column
+          : undefined;
+      return { code: current.code, constraint, column };
     }
     current = current.cause;
   }
@@ -53,4 +62,13 @@ export function isUniqueViolation(
 /** `true` when `error` (or one of its causes) is a PostgreSQL foreign key violation. */
 export function isForeignKeyViolation(error: unknown): boolean {
   return pgErrorOf(error)?.code === PG_FOREIGN_KEY_VIOLATION;
+}
+
+/**
+ * The column of a PostgreSQL NOT NULL violation behind `error` (`null` sent
+ * for a required column), or `undefined` for any other error.
+ */
+export function notNullViolationColumn(error: unknown): string | undefined {
+  const pg = pgErrorOf(error);
+  return pg?.code === PG_NOT_NULL_VIOLATION ? pg.column : undefined;
 }

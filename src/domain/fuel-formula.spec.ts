@@ -178,6 +178,108 @@ describe('parseFuelFormula — grammar', () => {
     ).toContain('Nested deeper than');
     expect(errorOf('1e999').message).toContain('out of range');
   });
+
+  it('limits the depth of power chains like any other nesting', () => {
+    // Every exponent is one level deeper (regression: chains were unlimited).
+    const chain = (terms: number): string =>
+      Array.from({ length: terms }, () => '1').join('^');
+    expect(() =>
+      parseFuelFormula(chain(FUEL_FORMULA_MAX_DEPTH + 1)),
+    ).not.toThrow();
+    expect(errorOf(chain(FUEL_FORMULA_MAX_DEPTH + 2)).message).toContain(
+      'Nested deeper than',
+    );
+    // The reviewer's probe: 70 terms (139 characters), refused by emission.
+    expect(errorOf(chain(70)).message).toContain('Nested deeper than');
+    expect(
+      errorOf(`speedKnot${' ** -speedKnot'.repeat(FUEL_FORMULA_MAX_DEPTH)}`)
+        .message,
+    ).toContain('Nested deeper than');
+  });
+});
+
+/**
+ * Corpus shared with the emission service's evaluator
+ * (`services/emission/src/domain/expression/evaluator.ts#compileFormula`),
+ * whose verdict is recorded for every entry. Fleet stores only formulas that
+ * emission can evaluate: it accepts exactly the formulas emission accepts,
+ * except where its limits are deliberately stricter.
+ */
+const SHARED_CORPUS = {
+  /** Emission compiles these; fleet must accept them. */
+  bothAccept: [
+    '-0.0382 * speedKnot ** 2 + 0.8658 * speedKnot - 0.0197',
+    '1.5103 * Math.exp(-0.064 * speedKnot)',
+    'speedKnot',
+    '2 ^ 3 ^ 2',
+    '-speedKnot ** 2',
+    '- - + speedKnot',
+    '(((speedKnot)))',
+    'Math.pow(speedKnot, 2) / Math.sqrt(4) + ln(2) - log(3)',
+    'min(1) + max(1, 2, 3) + abs(-speedKnot)',
+    '.5 + 1. + 1.e5 + 2E-3 + 10e+2',
+    ' speedKnot\t*\n2 ',
+    'speedKnot ** -1',
+    'exp(exp(exp(speedKnot)))',
+    Array.from({ length: 33 }, () => '1').join('^'),
+  ],
+  /** Emission refuses these; fleet must refuse them too. */
+  bothRefuse: [
+    '',
+    '   ',
+    'speedKnot +',
+    'speedKnot speedKnot',
+    '2speedKnot',
+    'process.exit(1)',
+    'Math.random()',
+    'Math.PI',
+    'Math.speedKnot',
+    'speedKnot.x',
+    'exp',
+    'exp()',
+    'min()',
+    'pow(1)',
+    'pow(1, 2, 3)',
+    'sqrt(1, 2)',
+    '(1',
+    '1)',
+    '1 ? 2 : 3',
+    '1 % 2',
+    'speedKnot = 2',
+    '[1]',
+    '1,2',
+    '"1"',
+    '1__proto__',
+    'constructor',
+    Array.from({ length: 70 }, () => '1').join('^'),
+    `${'('.repeat(65)}1${')'.repeat(65)}`,
+    '1+'.repeat(600) + '1',
+  ],
+  /** Emission compiles these, fleet's stricter limits refuse them. */
+  onlyEmissionAccepts: [
+    '1e999',
+    `${'('.repeat(40)}1${')'.repeat(40)}`,
+    '-'.repeat(40) + '1',
+    Array.from({ length: 40 }, () => '1').join('^'),
+    '1+'.repeat(300) + '1',
+  ],
+} as const;
+
+describe('parseFuelFormula — corpus shared with the emission evaluator', () => {
+  it.each(SHARED_CORPUS.bothAccept)('accepts %j', (formula) => {
+    expect(checkFuelFormula(formula).valid).toBe(true);
+  });
+
+  it.each(SHARED_CORPUS.bothRefuse)('refuses %j', (formula) => {
+    expect(checkFuelFormula(formula).valid).toBe(false);
+  });
+
+  it.each(SHARED_CORPUS.onlyEmissionAccepts)(
+    'refuses %j (stricter limit than emission)',
+    (formula) => {
+      expect(checkFuelFormula(formula).valid).toBe(false);
+    },
+  );
 });
 
 describe('checkFuelFormula', () => {

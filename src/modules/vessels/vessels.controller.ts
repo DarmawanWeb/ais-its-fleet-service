@@ -13,7 +13,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   Put,
@@ -34,9 +33,8 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
-import { ID_PIPE } from '../common/params.js';
+import { ID_PIPE, MmsiParam } from '../common/params.js';
 import { PHOTO_MAX_BYTES } from '../../domain/photo.js';
-import { invalidField } from '../../errors.js';
 import { ArrayBodyPipe, UuidArrayBodyPipe } from '../common/array-body.pipe.js';
 import {
   CreateVesselDto,
@@ -70,12 +68,6 @@ function detailOf(view: VesselView): VesselDetailDto {
   }
   return new VesselDetailDto(view);
 }
-
-/** Path parameter `:mmsi` as a 9-digit integer (400 VALIDATION_FAILED otherwise). */
-const MMSI_PIPE = new ParseIntPipe({
-  exceptionFactory: () =>
-    invalidField('mmsi', 'MMSI must be a 9-digit integer', 'isMmsi'),
-});
 
 /**
  * Vessels: `/api/v2/vessels` (spec §13.3). Reads need `vessel:read` and
@@ -126,10 +118,14 @@ export class VesselsController {
   @Get('by-mmsi/:mmsi')
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a vessel by MMSI' })
-  @ApiParam({ name: 'mmsi', example: 525005223 })
+  @ApiParam({
+    name: 'mmsi',
+    description: 'MMSI: exactly nine digits',
+    schema: { type: 'string', pattern: '^[0-9]{9}$', example: '525005223' },
+  })
   @ApiOkResponse({ schema: VESSEL_VIEW_SCHEMA })
   async getByMmsi(
-    @Param('mmsi', MMSI_PIPE) mmsi: number,
+    @MmsiParam() mmsi: number,
     @CurrentPrincipal() principal: Principal,
   ): Promise<VesselSummaryDto | VesselDetailDto> {
     return toVesselDto(await this.vessels.get({ mmsi }, principal));

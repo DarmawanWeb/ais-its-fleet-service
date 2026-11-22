@@ -4,7 +4,12 @@ import { pageOffsetOf, paginate } from '@darmawanweb/ais-its-nest/http';
 import { Injectable } from '@nestjs/common';
 
 import type { FleetDb } from '../../db/database.js';
-import { parseRegistryKey, planRegistrySearch } from '../../domain/registry.js';
+import {
+  parseRegistryKey,
+  planRegistrySearch,
+  type RegistryMatchMode,
+  substringArmNeeded,
+} from '../../domain/registry.js';
 import { invalidField, RegistryEntryNotFoundError } from '../../errors.js';
 import {
   type RegistryEntry,
@@ -14,7 +19,7 @@ import {
 /**
  * Registry particulars of ships (legacy `SecondaryShip`): public reference
  * data shared with every principal holding `vessel:read` (no tenant data),
- * searched without trigram indexes.
+ * searched over btree indexes without trigrams.
  */
 @Injectable()
 export class RegistryService {
@@ -23,17 +28,36 @@ export class RegistryService {
     private readonly repository: RegistryRepository,
   ) {}
 
+  /**
+   * Searches by name, IMO number or MMSI over indexes; the scanning
+   * substring arm runs only as {@link substringArmNeeded} decides.
+   */
   async search(query: {
     readonly q: string;
+    readonly match?: RegistryMatchMode | undefined;
     readonly page: number;
     readonly pageSize: number;
   }): Promise<Paginated<RegistryEntry>> {
-    const { rows, total } = await this.repository.search(
+    const plan = planRegistrySearch(query.q, query.match);
+    const page = { offset: pageOffsetOf(query), limit: query.pageSize };
+    let result = await this.repository.search(
       this.db,
-      planRegistrySearch(query.q),
-      { offset: pageOffsetOf(query), limit: query.pageSize },
+      plan,
+      { substring: plan.substring === 'always' },
+      page,
     );
-    return paginate(rows, query, total);
+    if (
+      plan.substring === 'when_sparse' &&
+      substringArmNeeded(plan, result.total, query.pageSize)
+    ) {
+      result = await this.repository.search(
+        this.db,
+        plan,
+        { substring: true },
+        page,
+      );
+    }
+    return paginate(result.rows, query, result.total);
   }
 
   /** By MMSI (9 digits) or IMO number (7 digits, optionally `IMO…`). */

@@ -1,24 +1,37 @@
-import { PageQueryDto } from '@darmawanweb/ais-its-nest/http';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsString, Length } from 'class-validator';
+import { IsIn, IsOptional, IsString, Length } from 'class-validator';
 
-import { trimString } from '../../common/validation.js';
+import {
+  REGISTRY_MATCH_MODES,
+  type RegistryMatchMode,
+} from '../../../domain/registry.js';
+import { BoundedPageQueryDto, trimString } from '../../common/validation.js';
 import type { RegistryEntry } from '../registry.repository.js';
 
 /** Query of `GET /registry/search`. */
-export class RegistrySearchQuery extends PageQueryDto {
+export class RegistrySearchQuery extends BoundedPageQueryDto {
   @ApiProperty({
     example: 'dharma',
     minLength: 1,
     maxLength: 100,
     description:
-      'Name (prefix; substring from 3 characters), IMO number or MMSI (prefix of digits)',
+      'Name, IMO number or MMSI. Names match by prefix (and by substring from 3 characters, see `match`); 1–9 digits (optionally `IMO…`) match IMO numbers and MMSIs starting with them. Exact matches rank first, then prefix, then substring matches.',
   })
   @Transform(trimString)
   @IsString()
   @Length(1, 100)
   readonly q!: string;
+
+  @ApiPropertyOptional({
+    enum: REGISTRY_MATCH_MODES,
+    default: 'auto',
+    description:
+      'Name matching: `prefix` (indexed only), `contains` (adds substring matches, scans the table), `auto` (adds substring matches only when the prefix matches do not fill one page). Numeric queries never match substrings.',
+  })
+  @IsOptional()
+  @IsIn(REGISTRY_MATCH_MODES)
+  readonly match?: RegistryMatchMode;
 }
 
 /** Registry particulars of a ship on the wire (legacy `SecondaryShip`). */

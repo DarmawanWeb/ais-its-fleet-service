@@ -25,12 +25,26 @@
  * power, as in mathematics: `-speedKnot ** 2` is `-(speedKnot²)` (JavaScript
  * rejects that form; every formula JavaScript accepts keeps its meaning).
  * `log` and `ln` are the natural logarithm (JavaScript `Math.log`).
+ *
+ * The grammar, the tokenizer and the depth counting are those of the
+ * emission service's evaluator (`services/emission/src/domain/expression/
+ * evaluator.ts`) with limits at or below its own, and numbers must be
+ * finite: every formula accepted here compiles there (see the shared corpus
+ * in `fuel-formula.spec.ts`).
  */
 
-/** Longest formula accepted, characters (also a CHECK in `fuel_formulas`). */
+/**
+ * Longest formula accepted, characters (also a CHECK in `fuel_formulas`);
+ * at most the emission evaluator's limit (1000), so a stored formula always
+ * compiles there.
+ */
 export const FUEL_FORMULA_MAX_LENGTH = 500;
 
-/** Deepest nesting of parentheses, calls and signs. */
+/**
+ * Deepest nesting of parentheses, function calls, signs and exponents,
+ * counted level by level as the emission evaluator counts them; at most its
+ * limit (64), so the formulas accepted here are a subset of those it accepts.
+ */
 export const FUEL_FORMULA_MAX_DEPTH = 32;
 
 /** The only variable of a formula: the segment speed in knots. */
@@ -190,7 +204,14 @@ class Parser {
   private power(): FuelFormulaNode {
     const base = this.primary();
     if (this.operator('**', '^') === undefined) return base;
-    return { kind: 'binary', operator: '^', left: base, right: this.unary() };
+    // Every exponent is one level deeper (as in the emission evaluator), so a
+    // chain `1^1^…^1` is depth-limited like parentheses, calls and signs.
+    return {
+      kind: 'binary',
+      operator: '^',
+      left: base,
+      right: this.nested(() => this.unary()),
+    };
   }
 
   private primary(): FuelFormulaNode {

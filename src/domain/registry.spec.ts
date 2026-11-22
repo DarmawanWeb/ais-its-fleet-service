@@ -4,6 +4,7 @@ import {
   mapLegacySecondaryShip,
   parseRegistryKey,
   planRegistrySearch,
+  substringArmNeeded,
 } from './registry.js';
 
 describe('parseRegistryKey', () => {
@@ -41,33 +42,69 @@ describe('parseRegistryKey', () => {
 });
 
 describe('planRegistrySearch', () => {
-  it('matches short names by prefix only and longer ones by substring', () => {
+  it('matches short names by prefix only and longer ones also by substring', () => {
     expect(planRegistrySearch('Dh')).toEqual({
-      namePrefix: 'dh',
-      nameContains: undefined,
+      text: 'dh',
+      digits: undefined,
       imoPrefix: undefined,
       mmsiRange: undefined,
+      substring: 'never',
     });
     expect(planRegistrySearch(' Ferry ')).toMatchObject({
-      namePrefix: 'ferry',
-      nameContains: 'ferry',
+      text: 'ferry',
+      substring: 'when_sparse',
     });
   });
 
-  it('turns digit queries into IMO prefixes and MMSI ranges', () => {
+  it('runs the scanning substring arm only as the match mode allows', () => {
+    expect(planRegistrySearch('ferry', 'auto').substring).toBe('when_sparse');
+    expect(planRegistrySearch('ferry', 'contains').substring).toBe('always');
+    expect(planRegistrySearch('ferry', 'prefix').substring).toBe('never');
+    // Too short for a substring even when asked for one.
+    expect(planRegistrySearch('fe', 'contains').substring).toBe('never');
+  });
+
+  it('turns digit queries into indexed identity lookups without a substring arm', () => {
     expect(planRegistrySearch('5250')).toMatchObject({
+      digits: '5250',
       imoPrefix: '5250',
       mmsiRange: [525_000_000, 525_099_999],
+      substring: 'never',
     });
-    expect(planRegistrySearch('525005223')).toMatchObject({
+    expect(planRegistrySearch('525005223', 'contains')).toMatchObject({
+      digits: '525005223',
       imoPrefix: undefined,
       mmsiRange: [525_005_223, 525_005_223],
+      substring: 'never',
     });
-    expect(planRegistrySearch('IMO 90379')).toMatchObject({
-      imoPrefix: '90379',
+    expect(planRegistrySearch('IMO 9037941')).toMatchObject({
+      digits: '9037941',
+      imoPrefix: '9037941',
+      substring: 'never',
     });
     // MMSIs never start with 0.
     expect(planRegistrySearch('0123').mmsiRange).toBeUndefined();
+  });
+});
+
+describe('substringArmNeeded', () => {
+  it('adds the substring arm when the indexed arms leave the page short (auto)', () => {
+    const plan = planRegistrySearch('dharma');
+    expect(substringArmNeeded(plan, 0, 20)).toBe(true);
+    expect(substringArmNeeded(plan, 19, 20)).toBe(true);
+    expect(substringArmNeeded(plan, 20, 20)).toBe(false);
+  });
+
+  it('follows explicit modes and never scans for identity lookups', () => {
+    expect(
+      substringArmNeeded(planRegistrySearch('dharma', 'contains'), 500, 20),
+    ).toBe(true);
+    expect(
+      substringArmNeeded(planRegistrySearch('dharma', 'prefix'), 0, 20),
+    ).toBe(false);
+    expect(substringArmNeeded(planRegistrySearch('9037941'), 0, 20)).toBe(
+      false,
+    );
   });
 });
 

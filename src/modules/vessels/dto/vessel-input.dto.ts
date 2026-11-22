@@ -2,13 +2,7 @@ import {
   VESSEL_STATUSES,
   type VesselStatus,
 } from '@darmawanweb/ais-its-contracts/domain';
-import { PageQueryDto } from '@darmawanweb/ais-its-nest/http';
-import {
-  ApiProperty,
-  ApiPropertyOptional,
-  OmitType,
-  PartialType,
-} from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -32,7 +26,10 @@ import {
 } from 'class-validator';
 
 import {
+  BoundedPageQueryDto,
   CODE_PATTERN,
+  IsOptionalNonNull,
+  PatchType,
   trimString,
   upperTrimString,
 } from '../../common/validation.js';
@@ -291,7 +288,7 @@ export class CreateVesselDto {
   readonly builtYear?: number | null;
 
   @ApiPropertyOptional({ enum: VESSEL_STATUSES, default: 'active' })
-  @IsOptional()
+  @IsOptionalNonNull()
   @IsIn(VESSEL_STATUSES)
   readonly status?: VesselStatus;
 
@@ -332,7 +329,7 @@ export class CreateVesselDto {
     type: [VesselEngineInputDto],
     maxItems: MAX_VESSEL_ENGINES,
   })
-  @IsOptional()
+  @IsOptionalNonNull()
   @IsArray()
   @ArrayMaxSize(MAX_VESSEL_ENGINES)
   @ValidateNested({ each: true })
@@ -346,7 +343,7 @@ export class CreateVesselDto {
     uniqueItems: true,
     description: 'Ports of call, in order',
   })
-  @IsOptional()
+  @IsOptionalNonNull()
   @IsArray()
   @ArrayMaxSize(MAX_VESSEL_PORTS)
   @ArrayUnique()
@@ -358,7 +355,7 @@ export class CreateVesselDto {
     description:
       'Owning organization — platform administrators only (default: the active organization)',
   })
-  @IsOptional()
+  @IsOptionalNonNull()
   @IsUUID()
   readonly orgId?: string;
 
@@ -367,7 +364,7 @@ export class CreateVesselDto {
     description:
       'Id of the legacy MVP document — platform administrators only (data migration)',
   })
-  @IsOptional()
+  @IsOptionalNonNull()
   @IsString()
   @Length(1, 64)
   readonly legacyId?: string;
@@ -377,8 +374,10 @@ export class CreateVesselDto {
  * `PATCH /vessels/:id`: identity, status, voyage share and references.
  * Dimensions, engines and ports have their own `PUT` sub-resources;
  * `orgId` (ownership transfer) is reserved to platform administrators.
+ * `null` clears `imo`, `flag`, `builtYear` and `firstFuelFormulaId`; for
+ * every other member it is `400 VALIDATION_FAILED`.
  */
-export class UpdateVesselDto extends PartialType(
+export class UpdateVesselDto extends PatchType(
   OmitType(CreateVesselDto, [
     'dimensions',
     'engines',
@@ -388,7 +387,7 @@ export class UpdateVesselDto extends PartialType(
 ) {}
 
 /** Query of `GET /vessels` (page-based list, spec §5). */
-export class ListVesselsQuery extends PageQueryDto {
+export class ListVesselsQuery extends BoundedPageQueryDto {
   @ApiPropertyOptional({
     description:
       'Name (case-insensitive substring), MMSI or IMO number (prefix of digits)',

@@ -44,6 +44,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 1000000,
               "default": 1,
               "type": "integer"
             }
@@ -215,9 +216,11 @@
             "name": "mmsi",
             "required": true,
             "in": "path",
+            "description": "MMSI: exactly nine digits",
             "schema": {
-              "example": 525005223,
-              "type": "number"
+              "type": "string",
+              "pattern": "^[0-9]{9}$",
+              "example": "525005223"
             }
           }
         ],
@@ -737,6 +740,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 1000000,
               "default": 1,
               "type": "integer"
             }
@@ -994,6 +998,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 1000000,
               "default": 1,
               "type": "integer"
             }
@@ -1251,6 +1256,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 1000000,
               "default": 1,
               "type": "integer"
             }
@@ -1520,6 +1526,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 1000000,
               "default": 1,
               "type": "integer"
             }
@@ -1777,6 +1784,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 1000000,
               "default": 1,
               "type": "integer"
             }
@@ -2043,6 +2051,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 1000000,
               "default": 1,
               "type": "integer"
             }
@@ -2062,12 +2071,27 @@
             "name": "q",
             "required": true,
             "in": "query",
-            "description": "Name (prefix; substring from 3 characters), IMO number or MMSI (prefix of digits)",
+            "description": "Name, IMO number or MMSI. Names match by prefix (and by substring from 3 characters, see `match`); 1–9 digits (optionally `IMO…`) match IMO numbers and MMSIs starting with them. Exact matches rank first, then prefix, then substring matches.",
             "schema": {
               "minLength": 1,
               "maxLength": 100,
               "example": "dharma",
               "type": "string"
+            }
+          },
+          {
+            "name": "match",
+            "required": false,
+            "in": "query",
+            "description": "Name matching: `prefix` (indexed only), `contains` (adds substring matches, scans the table), `auto` (adds substring matches only when the prefix matches do not fill one page). Numeric queries never match substrings.",
+            "schema": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "prefix",
+                "contains"
+              ]
             }
           }
         ],

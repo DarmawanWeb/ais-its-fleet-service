@@ -1,17 +1,6 @@
 import { newId } from '@darmawanweb/ais-its-contracts/domain';
 import { Injectable } from '@nestjs/common';
-import {
-  asc,
-  between,
-  count,
-  desc,
-  eq,
-  ilike,
-  like,
-  or,
-  type SQL,
-  sql,
-} from 'drizzle-orm';
+import { desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 
 import type { FleetDb } from '../../db/database.js';
 import { registryParticulars } from '../../db/schema.js';
@@ -29,53 +18,106 @@ export type RegistryEntry = RegistryParticulars & {
   readonly updatedAt: Date;
 };
 
+/** Options of {@link registrySearchSql}. */
+export interface RegistrySearchOptions {
+  /** Adds the substring arm `name ILIKE '%text%'` (a sequential scan). */
+  readonly substring: boolean;
+}
+
+/** A page of a registry search query. */
+export interface RegistrySearchPage {
+  readonly offset: number;
+  readonly limit: number;
+}
+
+/**
+ * The id query of a registry search. Each arm of the plan is its own
+ * `UNION ALL` branch, so every indexed arm is an index range scan:
+ * `lower(name) LIKE 'text%'` (`registry_particulars_name_idx`), `imo LIKE
+ * 'digits%'` (`registry_particulars_imo_idx`) and the MMSI range
+ * (`registry_particulars_mmsi_key`); only the optional substring arm scans.
+ * Entries matched by several arms keep their best rank (0 exact, 1 prefix,
+ * 2 substring); the matches are counted once and paged by rank, name and
+ * MMSI. The result always has one row: `total`, with `id` `NULL` when the
+ * page is empty.
+ */
+export function registrySearchSql(
+  plan: RegistrySearchPlan,
+  options: RegistrySearchOptions,
+  page: RegistrySearchPage,
+): SQL {
+  const t = registryParticulars;
+  const columns = sql`${t.id} AS id, ${t.name} AS name, ${t.mmsi} AS mmsi`;
+  const arms: SQL[] = [
+    sql`SELECT ${columns}, CASE WHEN lower(${t.name}) = ${plan.text} THEN 0 ELSE 1 END AS rank
+          FROM ${t} WHERE lower(${t.name}) LIKE ${`${escapeLikePattern(plan.text)}%`}`,
+  ];
+  if (plan.imoPrefix !== undefined) {
+    arms.push(
+      sql`SELECT ${columns}, CASE WHEN ${t.imo} = ${plan.imoPrefix} THEN 0 ELSE 1 END
+            FROM ${t} WHERE ${t.imo} LIKE ${`${plan.imoPrefix}%`}`,
+    );
+  }
+  if (plan.mmsiRange !== undefined) {
+    const [low, high] = plan.mmsiRange;
+    // A range of one MMSI is the exact MMSI of a 9-digit query.
+    const rank = low === high ? sql`0` : sql`1`;
+    arms.push(
+      sql`SELECT ${columns}, ${rank} FROM ${t} WHERE ${t.mmsi} BETWEEN ${low} AND ${high}`,
+    );
+  }
+  if (options.substring) {
+    arms.push(
+      sql`SELECT ${columns}, 2 FROM ${t} WHERE ${t.name} ILIKE ${`%${escapeLikePattern(plan.text)}%`}`,
+    );
+  }
+  return sql`
+    WITH candidates AS (${sql.join(arms, sql` UNION ALL `)}),
+         ranked AS (SELECT DISTINCT ON (id) id, name, mmsi, rank FROM candidates ORDER BY id, rank),
+         total AS (SELECT count(*)::int AS total FROM ranked)
+    SELECT total.total, page.id
+      FROM total
+      LEFT JOIN LATERAL (
+             SELECT id, rank, name, mmsi FROM ranked
+              ORDER BY rank, name, mmsi
+              LIMIT ${page.limit} OFFSET ${page.offset}
+           ) page ON true
+     ORDER BY page.rank, page.name, page.mmsi`;
+}
+
 /** Drizzle access to `registry_particulars`. */
 @Injectable()
 export class RegistryRepository {
   /**
-   * Entries matching the plan: exact and prefix matches first (MMSI, IMO,
-   * name), then substring matches of the name, each ordered by name.
+   * One page of the entries matching the plan (see {@link registrySearchSql}),
+   * best matches first, and how many match in total.
    */
   async search(
     db: FleetDb,
     plan: RegistrySearchPlan,
-    page: { readonly offset: number; readonly limit: number },
+    options: RegistrySearchOptions,
+    page: RegistrySearchPage,
   ): Promise<{ rows: RegistryEntry[]; total: number }> {
-    const namePrefix = `${escapeLikePattern(plan.namePrefix)}%`;
-    const prefixMatch = or(
-      like(sql`lower(${registryParticulars.name})`, namePrefix),
-      plan.imoPrefix === undefined
-        ? undefined
-        : like(registryParticulars.imo, `${plan.imoPrefix}%`),
-      plan.mmsiRange === undefined
-        ? undefined
-        : between(registryParticulars.mmsi, ...plan.mmsiRange),
-    );
-    const where: SQL | undefined =
-      plan.nameContains === undefined
-        ? prefixMatch
-        : or(
-            prefixMatch,
-            ilike(
-              registryParticulars.name,
-              `%${escapeLikePattern(plan.nameContains)}%`,
-            ),
-          );
-    const [rows, totals] = await Promise.all([
-      db
-        .select()
-        .from(registryParticulars)
-        .where(where)
-        .orderBy(
-          desc(sql`(${prefixMatch ?? sql`false`})`),
-          asc(registryParticulars.name),
-          asc(registryParticulars.mmsi),
-        )
-        .limit(page.limit)
-        .offset(page.offset),
-      db.select({ total: count() }).from(registryParticulars).where(where),
-    ]);
-    return { rows, total: totals[0]?.total ?? 0 };
+    const { rows: hits } = await db.execute<{
+      total: number;
+      id: string | null;
+    }>(registrySearchSql(plan, options, page));
+    const total = hits[0]?.total ?? 0;
+    const ids = hits.flatMap((hit) => (hit.id === null ? [] : [hit.id]));
+    if (ids.length === 0) return { rows: [], total };
+    const entries = await db
+      .select()
+      .from(registryParticulars)
+      .where(inArray(registryParticulars.id, ids));
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    return {
+      // A row deleted between the two statements is simply left out.
+      rows: ids.flatMap((id) => {
+        const entry = byId.get(id);
+        return entry === undefined ? [] : [entry];
+      }),
+      total,
+    };
   }
 
   /** The entry of an MMSI, or the most recently updated entry of an IMO number. */

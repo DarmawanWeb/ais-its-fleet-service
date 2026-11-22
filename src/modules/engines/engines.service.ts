@@ -165,14 +165,20 @@ export class EnginesService {
     );
   }
 
-  /** Refuses a kind change of an engine in use, then updates. */
+  /**
+   * Refuses a kind change of an engine in use, then updates. The engine row
+   * is locked before the vessels are counted: a concurrent fit of the engine
+   * (`VesselsService.fitEngines`, which checks the role against the kind
+   * under a share lock) is then either counted here or sees the new kind —
+   * never a fitted role that differs from the catalogue kind.
+   */
   private async updateChecked(
     db: FleetDb,
     id: string,
     changes: EngineChanges,
   ): Promise<Engine | undefined> {
     if (changes.kind !== undefined) {
-      const current = await this.repository.findById(db, id);
+      const current = await this.repository.lockById(db, id);
       if (current === undefined) return undefined;
       if (current.kind !== changes.kind) {
         const users = await this.aggregates.countVesselsUsing(db, {

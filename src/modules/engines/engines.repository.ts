@@ -58,6 +58,21 @@ export class EnginesRepository {
     return row;
   }
 
+  /**
+   * The engine, locked `FOR UPDATE` for the rest of the transaction: a
+   * vessel write fitting it (which share-locks it, and whose foreign key
+   * key-share-locks it) either commits before this returns or waits for the
+   * transaction and then reads its outcome.
+   */
+  async lockById(db: FleetDb, id: string): Promise<Engine | undefined> {
+    const [row] = await db
+      .select()
+      .from(engines)
+      .where(eq(engines.id, id))
+      .for('update');
+    return row;
+  }
+
   async insert(db: FleetDb, engine: NewEngine): Promise<Engine> {
     const [row] = await db.insert(engines).values(engine).returning();
     if (row === undefined)

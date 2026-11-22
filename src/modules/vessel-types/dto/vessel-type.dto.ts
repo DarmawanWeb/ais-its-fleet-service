@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsDefined,
@@ -19,6 +19,7 @@ import type { VesselType } from '../../../domain/vessel.js';
 import {
   CODE_PATTERN,
   IsStrictlyIncreasing,
+  PatchType,
   trimString,
 } from '../../common/validation.js';
 
@@ -142,8 +143,11 @@ export class CreateVesselTypeDto {
   readonly source?: string | null;
 }
 
-/** `PATCH /vessel-types/:id`: any subset of the create fields. */
-export class UpdateVesselTypeDto extends PartialType(CreateVesselTypeDto) {}
+/**
+ * `PATCH /vessel-types/:id`: any subset of the create fields; `null` clears
+ * `capacityFixed`, `icon` and `source` and is refused for the others.
+ */
+export class UpdateVesselTypeDto extends PatchType(CreateVesselTypeDto) {}
 
 /** A vessel type on the wire. */
 export class VesselTypeDto {

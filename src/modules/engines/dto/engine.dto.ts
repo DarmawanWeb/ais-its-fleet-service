@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsIn,
@@ -15,6 +15,7 @@ import {
 import type { Engine } from '../../../domain/vessel.js';
 import {
   CODE_PATTERN,
+  PatchType,
   ReferenceListQuery,
   trimString,
 } from '../../common/validation.js';
@@ -75,8 +76,8 @@ export class CreateEngineDto {
   readonly source?: string | null;
 }
 
-/** `PATCH /engines/:id`: any subset of the create fields. */
-export class UpdateEngineDto extends PartialType(CreateEngineDto) {}
+/** `PATCH /engines/:id`: any subset of the create fields; `null` clears `code` and `source` only. */
+export class UpdateEngineDto extends PatchType(CreateEngineDto) {}
 
 /** Query of `GET /engines`. */
 export class ListEnginesQuery extends ReferenceListQuery {
