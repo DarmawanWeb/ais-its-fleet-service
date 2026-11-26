@@ -16,6 +16,11 @@ import {
   engineAssignmentErrors,
 } from '../../domain/engine-assignment.js';
 import { ownerOfNewVessel, vesselViewFor } from '../../domain/vessel-access.js';
+import {
+  type SortOrder,
+  technicalSortScope,
+  type VesselSortKey,
+} from '../../domain/vessel-list.js';
 import type { VesselDimensions, VesselRecord } from '../../domain/vessel.js';
 import {
   ForeignOrganizationError,
@@ -40,6 +45,16 @@ import {
   type VesselListRow,
   VesselsRepository,
 } from './vessels.repository.js';
+
+/** Query of {@link VesselsService.list} (`GET /vessels`). */
+export interface VesselListQuery extends Omit<VesselFilter, 'mmsi'> {
+  readonly page: number;
+  readonly pageSize: number;
+  /** MMSIs as validated nine-digit strings. */
+  readonly mmsi?: readonly string[] | undefined;
+  readonly sort?: VesselSortKey | undefined;
+  readonly order?: SortOrder | undefined;
+}
 
 /** A vessel key of the read endpoints. */
 export type VesselKey = { readonly id: string } | { readonly mmsi: number };
@@ -101,9 +116,13 @@ export class VesselsService {
     private readonly audit: AuditService,
   ) {}
 
-  /** One page of vessels, each in the view the principal may see. */
+  /**
+   * One page of vessels, each in the view the principal may see, optionally
+   * only the given MMSIs (batch identity lookup) and sorted; technical sort
+   * keys order only the vessels the principal may see in detail.
+   */
   async list(
-    query: VesselFilter & { readonly page: number; readonly pageSize: number },
+    query: VesselListQuery,
     principal: Principal,
   ): Promise<Paginated<VesselView>> {
     if (
@@ -123,8 +142,17 @@ export class VesselsService {
         typeCode: query.typeCode,
         orgId: query.orgId,
         status: query.status,
+        mmsi:
+          query.mmsi === undefined
+            ? undefined
+            : [...new Set(query.mmsi.map(Number))],
       },
       { offset: pageOffsetOf(query), limit: query.pageSize },
+      {
+        key: query.sort ?? 'name',
+        order: query.order ?? 'asc',
+        technical: technicalSortScope(principal),
+      },
     );
     return paginate(await this.views(rows, principal), query, total);
   }
@@ -322,15 +350,15 @@ export class VesselsService {
     );
   }
 
-  /** Re-enqueues the current snapshot of a vessel (platform administrators). */
+  /**
+   * Re-enqueues the current snapshot of a vessel. The route is reserved to
+   * platform administrators (`@RequirePlatformAdmin()`).
+   */
   async republish(
     id: string,
     principal: Principal,
     request?: AuditRequest,
   ): Promise<number> {
-    if (!principal.isPlatformAdmin) {
-      throw new PlatformAdminRequiredError('republish vessel snapshots');
-    }
     const vessel = await inTransaction(this.pool, async (transaction) => {
       const locked = await this.repository.lockShared(transaction.db, id);
       if (locked === undefined) throw new VesselNotFoundError({ id });

@@ -255,12 +255,12 @@ describe('vessels: CRUD, validation and tenancy', () => {
         404,
       ).code,
     ).toBe('VESSEL_NOT_FOUND');
-    expect(
-      problemOf(
-        await service.request(orgA.viewer, 'GET', '/api/v2/vessels/not-a-uuid'),
-        400,
-      ).code,
-    ).toBe('VALIDATION_FAILED');
+    const malformedId = problemOf(
+      await service.request(orgA.viewer, 'GET', '/api/v2/vessels/not-a-uuid'),
+      400,
+    );
+    expect(malformedId.code).toBe('VALIDATION_FAILED');
+    expect(fieldsOf(malformedId)).toEqual(['id']);
     // Anything but exactly nine digits forming an MMSI is a field error, never
     // a 404 or a 500 (regression: ParseIntPipe let these through).
     for (const key of [
@@ -652,5 +652,141 @@ describe('vessels: CRUD, validation and tenancy', () => {
       expect(fieldsOf(problem)).toEqual(['page']);
     }
     expect((await list('page=1000000')).data).toEqual([]);
+  });
+  it('looks up identities by MMSI and sorts server-side without revealing foreign technical data', async () => {
+    const orgC = newOrganization();
+    const orgD = newOrganization();
+    const withDwt = (dwt: number) => ({
+      dimensions: { ...SAMPLE_DIMENSIONS, dwt },
+    });
+    // orgC: dwt 3000 / 1000 / 2000; orgD: dwt 9000 / 500 (foreign to orgC).
+    const ownBig = await createVessel(service, orgC.admin, references, {
+      name: 'C Echo',
+      ...withDwt(3000),
+    });
+    const ownSmall = await createVessel(service, orgC.admin, references, {
+      name: 'C Alfa',
+      ...withDwt(1000),
+    });
+    const ownMid = await createVessel(service, orgC.admin, references, {
+      name: 'C Delta',
+      ...withDwt(2000),
+    });
+    const foreignBig = await createVessel(service, orgD.admin, references, {
+      name: 'D Bravo',
+      ...withDwt(9000),
+    });
+    const foreignSmall = await createVessel(service, orgD.admin, references, {
+      name: 'D Charlie',
+      ...withDwt(500),
+    });
+    const all = [ownBig, ownSmall, ownMid, foreignBig, foreignSmall];
+    const mmsiList = all.map((vessel) => vessel.mmsi).join(',');
+    const list = async (actor: typeof orgC.viewer, query: string) =>
+      bodyOf<{
+        data: VesselJson[];
+        meta: { page: number; pageSize: number; total: number };
+      }>(await service.request(actor, 'GET', `/api/v2/vessels?${query}`), 200);
+
+    // Batch identity lookup: one request names every vessel of a list, in the
+    // view the principal may see; unknown MMSIs are simply absent.
+    const lookup = await list(
+      orgC.viewer,
+      `mmsi=${mmsiList},${uniqueMmsi()}&pageSize=100`,
+    );
+    expect(lookup.meta.total).toBe(5);
+    const views = new Map(lookup.data.map((row) => [row.id, row]));
+    expect(views.get(ownBig.id)?.view).toBe('detail');
+    expect(views.get(foreignBig.id)).toMatchObject({
+      view: 'summary',
+      mmsi: foreignBig.mmsi,
+      name: 'D Bravo',
+      flag: 'ID',
+      type: { code: references.typeCode },
+    });
+    expect(views.get(foreignBig.id)).not.toHaveProperty('dimensions');
+    // Repeated parameters work as well; a malformed list is a field error.
+    expect(
+      (await list(orgC.viewer, `mmsi=${ownBig.mmsi}&mmsi=${foreignBig.mmsi}`))
+        .meta.total,
+    ).toBe(2);
+    for (const mmsi of ['0525005223', `${ownBig.mmsi};${foreignBig.mmsi}`]) {
+      const problem = problemOf(
+        await service.request(
+          orgC.viewer,
+          'GET',
+          `/api/v2/vessels?mmsi=${encodeURIComponent(mmsi)}`,
+        ),
+        400,
+      );
+      expect(fieldsOf(problem), mmsi).toEqual(['mmsi']);
+    }
+
+    const ids = (page: { data: VesselJson[] }) =>
+      page.data.map((row) => row.id);
+    // Identity keys sort every vessel.
+    expect(
+      ids(await list(orgC.viewer, `mmsi=${mmsiList}&sort=name&order=desc`)),
+    ).toEqual([
+      foreignSmall.id,
+      foreignBig.id,
+      ownBig.id,
+      ownMid.id,
+      ownSmall.id,
+    ]);
+    expect(ids(await list(orgC.viewer, `mmsi=${mmsiList}&sort=mmsi`))).toEqual(
+      [...all].sort((a, b) => a.mmsi - b.mmsi).map((vessel) => vessel.id),
+    );
+    // A technical key orders only the own vessels; foreign ones follow by
+    // name, whatever their tonnage, in both directions.
+    expect(
+      ids(await list(orgC.viewer, `mmsi=${mmsiList}&sort=dwt&order=desc`)),
+    ).toEqual([
+      ownBig.id,
+      ownMid.id,
+      ownSmall.id,
+      foreignBig.id,
+      foreignSmall.id,
+    ]);
+    expect(
+      ids(await list(orgC.viewer, `mmsi=${mmsiList}&sort=dwt&order=asc`)),
+    ).toEqual([
+      ownSmall.id,
+      ownMid.id,
+      ownBig.id,
+      foreignBig.id,
+      foreignSmall.id,
+    ]);
+    // Platform administrators see every vessel's technical data.
+    expect(
+      ids(await list(SUPER_ADMIN, `mmsi=${mmsiList}&sort=dwt&order=desc`)),
+    ).toEqual([
+      foreignBig.id,
+      ownBig.id,
+      ownMid.id,
+      ownSmall.id,
+      foreignSmall.id,
+    ]);
+    // Pages stay stable under a sort (ties by name, then id).
+    const firstPage = await list(
+      orgC.viewer,
+      `mmsi=${mmsiList}&sort=dwt&order=desc&pageSize=2&page=1`,
+    );
+    const secondPage = await list(
+      orgC.viewer,
+      `mmsi=${mmsiList}&sort=dwt&order=desc&pageSize=2&page=2`,
+    );
+    expect([...ids(firstPage), ...ids(secondPage)]).toEqual([
+      ownBig.id,
+      ownMid.id,
+      ownSmall.id,
+      foreignBig.id,
+    ]);
+    for (const query of ['sort=orgId', 'order=up']) {
+      problemOf(
+        await service.request(orgC.viewer, 'GET', `/api/v2/vessels?${query}`),
+        400,
+      );
+    }
   });
 });

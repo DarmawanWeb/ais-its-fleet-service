@@ -13,6 +13,7 @@ import {
   enqueueEvent,
   EventPublisher,
   NatsClient,
+  OutboxRelay,
 } from '@darmawanweb/ais-its-nest/nats';
 import { waitFor } from '@darmawanweb/ais-its-nest/testing';
 import { sql } from 'drizzle-orm';
@@ -21,7 +22,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { FleetDb } from '../src/db/database.js';
 import * as schema from '../src/db/schema.js';
-import { FleetOutboxRelay } from '../src/modules/snapshots/outbox-relay.js';
 import { VesselAggregatesRepository } from '../src/modules/snapshots/vessel-aggregates.repository.js';
 import { SAMPLE_DIMENSIONS } from './fixtures/sample-vessel.js';
 import {
@@ -356,7 +356,7 @@ describe('VesselSnapshotV1 publication through the transactional outbox', () => 
       ),
       200,
     );
-    await service.app.get(FleetOutboxRelay).relayOnce();
+    await service.app.get(OutboxRelay).relayOnce();
     expect(probe.of(first.id).length).toBe(before);
 
     // Reference rows in use cannot be deleted.
@@ -430,16 +430,23 @@ describe('VesselSnapshotV1 publication through the transactional outbox', () => 
     expect(again.envelope.data).toEqual(original.envelope.data);
   });
 
-  it('retries failed publications with backoff and parks payloads that can never be published', async () => {
-    const relay = service.app.get(FleetOutboxRelay);
+  it('retries a failing row with backoff while other vessels flow, and parks payloads that can never be published', async () => {
+    const relay = service.app.get(OutboxRelay);
+    // fleet.outbox has seq and next_attempt_at: the kit relays per key.
+    expect(await relay.mode()).toBe('per-key');
     // A row for a stream nobody created in this test (GEO): NATS has no responder.
     // Envelope ids are UUID v7 (spec §7.1), like the ids enqueueEvent assigns.
     const unroutable = newId();
     const zoneId = newId();
-    await pool.query(
-      "INSERT INTO outbox (id, type, entity_key, data) VALUES ($1, 'geo.zone.deleted.v1', $2, $3::jsonb)",
-      [unroutable, zoneId, JSON.stringify({ id: zoneId, orgId: null })],
-    );
+    const insertZoneTombstone = (id: string) =>
+      pool.query(
+        "INSERT INTO outbox (id, type, entity_key, data) VALUES ($1, 'geo.zone.deleted.v1', $2, $3::jsonb)",
+        [id, zoneId, JSON.stringify({ id: zoneId, orgId: null })],
+      );
+    await insertZoneTombstone(unroutable);
+    // A later row of the same key: it must wait behind the failing one.
+    const behind = newId();
+    await insertZoneTombstone(behind);
     // A row whose payload is not a VesselSnapshotV1 any more.
     const poison = newId();
     const vesselId = newId();
@@ -471,25 +478,39 @@ describe('VesselSnapshotV1 publication through the transactional outbox', () => 
     expect(retried.next_attempt_at.getTime()).toBeGreaterThan(
       Date.now() - 1000,
     );
+    // Only its key waits: the later row of the zone was never attempted…
+    expect(await outboxRow(behind)).toMatchObject({
+      attempts: 0,
+      published_at: null,
+      failed_at: null,
+    });
+    // …while the snapshots of other vessels keep flowing (0.1 relays had
+    // per-row retries too; the kit's 0.2 relay stopped at the first failure).
+    const flowing = await createVessel(service, org.admin, references);
+    await probe.next(flowing.id, isUpsert);
+    expect((await outboxRow(unroutable))?.published_at).toBeNull();
 
+    // The relay loop refreshes its gauges at most every second (parked rows
+    // every 10 s); an explicit pass refreshes them all.
+    await relay.relayOnce();
     const metrics = await service.app.inject({
       method: 'GET',
       url: '/metrics',
     });
     expect(metrics.body).toMatch(
-      /aisits_outbox_relayed_total\{[^}]*outcome="retried"[^}]*\} [1-9]/,
+      /aisits_outbox_relayed_total\{[^}]*outcome="failed"[^}]*\} [1-9]/,
     );
     expect(metrics.body).toMatch(
       /aisits_outbox_relayed_total\{[^}]*outcome="rejected"[^}]*\} [1-9]/,
     );
-    expect(metrics.body).toMatch(/aisits_outbox_failed [1-9]/);
+    expect(metrics.body).toMatch(/aisits_outbox_retrying_rows [1-9]/);
+    expect(metrics.body).toMatch(/aisits_outbox_failed_rows [1-9]/);
     expect(metrics.body).toMatch(
       /aisits_fleet_snapshots_enqueued_total\{reason="reference_change"\} [1-9]/,
     );
 
-    // Neither row blocks other vessels: a new vessel is still published.
     await pool.query('DELETE FROM outbox WHERE id = ANY($1::uuid[])', [
-      [unroutable, poison],
+      [unroutable, behind, poison],
     ]);
     const vessel = await createVessel(service, org.admin, references);
     await probe.next(vessel.id, isUpsert);
@@ -627,7 +648,7 @@ describe('several relay replicas and concurrent writers', () => {
       client.release();
     }
     for (const service of [primary, replica]) {
-      service.app.get(FleetOutboxRelay).notify();
+      service.app.get(OutboxRelay).notify();
     }
 
     const backlog = new Set([...enqueued.values()].flat());

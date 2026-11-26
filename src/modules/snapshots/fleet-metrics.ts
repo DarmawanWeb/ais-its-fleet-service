@@ -1,6 +1,6 @@
 import { MetricsService } from '@darmawanweb/ais-its-nest/metrics';
 import { Injectable } from '@nestjs/common';
-import type { Counter } from 'prom-client';
+import type { Counter } from '@darmawanweb/ais-its-nest/metrics';
 
 /** Why snapshots were enqueued. */
 export type SnapshotReason =

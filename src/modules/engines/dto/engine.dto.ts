@@ -1,6 +1,10 @@
+import { IsOptionalNotNull } from '@darmawanweb/ais-its-nest/http';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsIn,
   IsNumber,
   IsOptional,
@@ -12,10 +16,14 @@ import {
   Min,
 } from 'class-validator';
 
+import { VESSEL_COUNT_DESCRIPTION } from '../../snapshots/reference-usage.js';
 import type { Engine } from '../../../domain/vessel.js';
 import {
   CODE_PATTERN,
+  IsCatalogReference,
+  MAX_REFERENCE_IDS,
   PatchType,
+  REFERENCE_IDS_DESCRIPTION,
   ReferenceListQuery,
   trimString,
 } from '../../common/validation.js';
@@ -74,6 +82,20 @@ export class CreateEngineDto {
   @IsString()
   @MaxLength(2000)
   readonly source?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: MAX_REFERENCE_IDS,
+    uniqueItems: true,
+    example: ['legacy-mvp-backend'],
+    description: REFERENCE_IDS_DESCRIPTION,
+  })
+  @IsOptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_REFERENCE_IDS)
+  @ArrayUnique()
+  @IsCatalogReference({ each: true })
+  readonly referenceIds?: string[];
 }
 
 /** `PATCH /engines/:id`: any subset of the create fields; `null` clears `code` and `source` only. */
@@ -113,13 +135,29 @@ export class EngineDto {
   @ApiProperty({ type: String, nullable: true })
   readonly source: string | null;
 
+  @ApiProperty({
+    type: [String],
+    example: ['legacy-mvp-backend'],
+    description:
+      "Ids of the methodology catalog's references behind the values (docs/references/references.json)",
+  })
+  readonly referenceIds: string[];
+
+  @ApiPropertyOptional({
+    type: 'integer',
+    minimum: 0,
+    example: 3,
+    description: VESSEL_COUNT_DESCRIPTION,
+  })
+  readonly vesselCount?: number;
+
   @ApiProperty({ format: 'date-time' })
   readonly createdAt: string;
 
   @ApiProperty({ format: 'date-time' })
   readonly updatedAt: string;
 
-  constructor(engine: Engine) {
+  constructor(engine: Engine, vesselCount?: number) {
     this.id = engine.id;
     this.code = engine.code;
     this.kind = engine.kind;
@@ -128,7 +166,9 @@ export class EngineDto {
     this.powerKw = engine.powerKw;
     this.sfoc = engine.sfoc;
     this.source = engine.source;
+    this.referenceIds = [...engine.referenceIds];
     this.createdAt = engine.createdAt.toISOString();
     this.updatedAt = engine.updatedAt.toISOString();
+    if (vesselCount !== undefined) this.vesselCount = vesselCount;
   }
 }

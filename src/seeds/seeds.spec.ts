@@ -1,10 +1,11 @@
+import { getReference } from '@darmawanweb/ais-its-contracts/references';
+import { validateFuelFormula } from '@darmawanweb/ais-its-contracts/domain';
 import {
   FuelSnapshotSchema,
   VesselTypeSnapshotSchema,
 } from '@darmawanweb/ais-its-contracts/events';
 import { describe, expect, it } from 'vitest';
 
-import { checkFuelFormula } from '../domain/fuel-formula.js';
 import { VESSEL_TYPE_ICONS } from '../modules/vessel-types/dto/vessel-type.dto.js';
 import { FUEL_SEEDS } from './fuels.seed.js';
 import {
@@ -118,8 +119,8 @@ describe('fuel seeds (MEPC.364(79))', () => {
 describe('sample seeds', () => {
   it('are in the safe formula grammar, keyed by code and documented', () => {
     for (const seed of FUEL_FORMULA_SEEDS) {
-      expect(checkFuelFormula(seed.mainEngineFormula).valid).toBe(true);
-      expect(checkFuelFormula(seed.auxiliaryEngineFormula).valid).toBe(true);
+      expect(validateFuelFormula(seed.mainEngineFormula).valid).toBe(true);
+      expect(validateFuelFormula(seed.auxiliaryEngineFormula).valid).toBe(true);
     }
     for (const seed of [
       ...ENGINE_SEEDS,
@@ -133,5 +134,21 @@ describe('sample seeds', () => {
       'auxiliary',
     ]);
     expect(PORT_SEEDS.map((seed) => seed.code)).toEqual(['PBI', 'LMR']);
+  });
+});
+
+describe('catalog reference ids of the seeds', () => {
+  it('cite references of the methodology catalog on every ship type, fuel and engine', () => {
+    for (const seed of [...VESSEL_TYPE_SEEDS, ...FUEL_SEEDS, ...ENGINE_SEEDS]) {
+      expect(seed.referenceIds.length, seed.code).toBeGreaterThan(0);
+      for (const id of seed.referenceIds) {
+        expect(getReference(id), `${seed.code}: ${id}`).toBeDefined();
+      }
+    }
+    expect(VESSEL_TYPE_SEEDS[0]?.referenceIds).toEqual([
+      'imo-mepc-353-78',
+      'imo-mepc-354-78',
+    ]);
+    expect(FUEL_SEEDS[0]?.referenceIds).toEqual(['imo-mepc-364-79']);
   });
 });

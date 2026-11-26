@@ -32,6 +32,10 @@ export interface LoadAggregatesOptions {
   readonly lockReferences?: boolean | undefined;
 }
 
+/** The reference resources whose rows vessels use. */
+export type ReferenceKind =
+  'vesselType' | 'fuel' | 'fuelFormula' | 'engine' | 'port';
+
 /** Reference rows referenced by a filter of {@link VesselAggregatesRepository.lockVesselsUsing}. */
 export type ReferenceFilter =
   | { readonly typeId: string }
@@ -167,6 +171,72 @@ export class VesselAggregatesRepository {
        WHERE ${vessels.id} = locked.id
       RETURNING locked.id`);
     return rows.map((row) => row.id).sort();
+  }
+
+  /**
+   * Number of vessels (of every organization) using each of the reference
+   * rows `ids` of `kind`, by id; rows no vessel uses are absent. One grouped
+   * query per page of a reference list (`ids` ≤ 100).
+   */
+  async countVesselsUsingEach(
+    db: FleetDb,
+    kind: ReferenceKind,
+    ids: readonly string[],
+  ): Promise<Map<string, number>> {
+    if (ids.length === 0) return new Map();
+    const list = [...ids];
+    const vesselsCount = sql<number>`count(*)::int`;
+    let rows: readonly { id: string | null; count: number }[];
+    switch (kind) {
+      case 'vesselType':
+        rows = await db
+          .select({ id: vessels.typeId, count: vesselsCount })
+          .from(vessels)
+          .where(inArray(vessels.typeId, list))
+          .groupBy(vessels.typeId);
+        break;
+      case 'fuel':
+        rows = await db
+          .select({ id: vessels.fuelId, count: vesselsCount })
+          .from(vessels)
+          .where(inArray(vessels.fuelId, list))
+          .groupBy(vessels.fuelId);
+        break;
+      case 'fuelFormula':
+        rows = await db
+          .select({ id: vessels.firstFuelFormulaId, count: vesselsCount })
+          .from(vessels)
+          .where(inArray(vessels.firstFuelFormulaId, list))
+          .groupBy(vessels.firstFuelFormulaId);
+        break;
+      case 'engine':
+        // A vessel fits an engine once per role: count vessels, not rows.
+        rows = await db
+          .select({
+            id: vesselEngines.engineId,
+            count: sql<number>`count(DISTINCT ${vesselEngines.vesselId})::int`,
+          })
+          .from(vesselEngines)
+          .where(inArray(vesselEngines.engineId, list))
+          .groupBy(vesselEngines.engineId);
+        break;
+      case 'port':
+        rows = await db
+          .select({ id: vesselPorts.portId, count: vesselsCount })
+          .from(vesselPorts)
+          .where(inArray(vesselPorts.portId, list))
+          .groupBy(vesselPorts.portId);
+        break;
+      default: {
+        const unknown: never = kind;
+        throw new Error(`Unknown reference kind ${String(unknown)}`);
+      }
+    }
+    return new Map(
+      rows.flatMap((row) =>
+        row.id === null ? [] : [[row.id, row.count] as const],
+      ),
+    );
   }
 
   /** Number of vessels that embed a reference row. */

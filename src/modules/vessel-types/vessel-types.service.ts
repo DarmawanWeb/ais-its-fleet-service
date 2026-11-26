@@ -13,6 +13,7 @@ import type { FleetDb } from '../../db/database.js';
 import type { VesselType } from '../../domain/vessel.js';
 import { ReferenceNotFoundError } from '../../errors.js';
 import {
+  changesEmbedded,
   deleteUnusedReference,
   type ReferenceChange,
   updateReference,
@@ -49,8 +50,25 @@ function changesOf(body: UpdateVesselTypeDto): VesselTypeChanges {
       : { d1: body.d.d1, d2: body.d.d2, d3: body.d.d3, d4: body.d.d4 }),
     ...(body.icon === undefined ? {} : { icon: body.icon }),
     ...(body.source === undefined ? {} : { source: body.source }),
+    ...(body.referenceIds === undefined
+      ? {}
+      : { referenceIds: body.referenceIds }),
   };
 }
+
+/** The members vessel snapshots embed: only their changes republish vessels. */
+const VESSEL_TYPE_EMBEDDED: readonly (keyof VesselTypeChanges)[] = [
+  'code',
+  'name',
+  'capacityUnit',
+  'a',
+  'c',
+  'capacityFixed',
+  'd1',
+  'd2',
+  'd3',
+  'd4',
+];
 
 /**
  * Ship types (reference data): CRUD with unique codes; a change republishes
@@ -111,6 +129,7 @@ export class VesselTypesService {
           d4: body.d.d4,
           icon: body.icon ?? null,
           source: body.source ?? null,
+          referenceIds: body.referenceIds ?? [],
         }),
     );
     await this.audit.record(
@@ -149,7 +168,9 @@ export class VesselTypesService {
           id,
           snapshots: this.snapshots,
           notifier: this.notifier,
-          embeddedBy: { typeId: id },
+          embeddedBy: changesEmbedded(changes, VESSEL_TYPE_EMBEDDED)
+            ? { typeId: id }
+            : null,
           update: (db) => this.repository.update(db, id, changes),
         }),
     );

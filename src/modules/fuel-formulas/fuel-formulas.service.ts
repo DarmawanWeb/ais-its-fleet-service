@@ -13,6 +13,7 @@ import type { FleetDb } from '../../db/database.js';
 import type { FuelFormula } from '../../domain/vessel.js';
 import { ReferenceNotFoundError } from '../../errors.js';
 import {
+  changesEmbedded,
   definedChanges,
   deleteUnusedReference,
   type ReferenceChange,
@@ -30,6 +31,12 @@ import {
   FUEL_FORMULA_CODE_CONSTRAINT,
   FuelFormulasRepository,
 } from './fuel-formulas.repository.js';
+
+/** The members vessel snapshots embed: only their changes republish vessels. */
+const FUEL_FORMULA_EMBEDDED: readonly (keyof UpdateFuelFormulaDto)[] = [
+  'mainEngineFormula',
+  'auxiliaryEngineFormula',
+];
 
 /**
  * First fuel formulas (reference data, legacy `FirstFuelFormula`): both
@@ -123,7 +130,9 @@ export class FuelFormulasService {
           id,
           snapshots: this.snapshots,
           notifier: this.notifier,
-          embeddedBy: { firstFuelFormulaId: id },
+          embeddedBy: changesEmbedded(changes, FUEL_FORMULA_EMBEDDED)
+            ? { firstFuelFormulaId: id }
+            : null,
           update: (db) => this.repository.update(db, id, changes),
         }),
     );

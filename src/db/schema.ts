@@ -34,6 +34,20 @@ function columnCheck(table: string, column: string, condition: SQL) {
 /** The CHECK of a reference-row `code` (lowercase snake case, ≤ 64 characters). */
 const CODE_CHECK = sql`code ~ '^[a-z0-9]+(_[a-z0-9]+)*$' AND char_length(code) <= 64`;
 
+/**
+ * Ids of the methodology catalog's references (migration 0003): validated
+ * against the catalog by the DTOs, bounded here.
+ */
+const referenceIdsColumn = () =>
+  pg
+    .text('reference_ids')
+    .array()
+    .notNull()
+    .default(sql`'{}'`);
+
+/** The CHECK of `reference_ids` (at most 20 ids). */
+const REFERENCE_IDS_CHECK = sql`cardinality(reference_ids) <= 20`;
+
 /** Ship types with CII reference-line parameters and rating vector. */
 export const vesselTypes = serviceSchema.table(
   'vessel_types',
@@ -51,6 +65,7 @@ export const vesselTypes = serviceSchema.table(
     d4: float('d4').notNull(),
     icon: pg.text('icon'),
     source: pg.text('source'),
+    referenceIds: referenceIdsColumn(),
     ...timestamps,
   },
   (table) => [
@@ -75,6 +90,7 @@ export const vesselTypes = serviceSchema.table(
       sql`icon IN ('bulkca', 'combin', 'contai', 'cruise', 'gascar', 'genera', 'lngcar', 'refrig', 'ro-roc', 'ro-rop', 'ro-rov', 'tanker', 'unknown')`,
     ),
     columnCheck('vessel_types', 'source', sql`char_length(source) <= 2000`),
+    columnCheck('vessel_types', 'reference_ids', REFERENCE_IDS_CHECK),
     pg.check('vessel_types_d_increasing', sql`d1 < d2 AND d2 < d3 AND d3 < d4`),
   ],
 );
@@ -90,6 +106,7 @@ export const fuels = serviceSchema.table(
     conversionFactor: float('conversion_factor').notNull(),
     density: float('density').notNull(),
     source: pg.text('source'),
+    referenceIds: referenceIdsColumn(),
     ...timestamps,
   },
   (table) => [
@@ -100,6 +117,7 @@ export const fuels = serviceSchema.table(
     columnCheck('fuels', 'conversion_factor', sql`conversion_factor > 0`),
     columnCheck('fuels', 'density', sql`density > 0`),
     columnCheck('fuels', 'source', sql`char_length(source) <= 2000`),
+    columnCheck('fuels', 'reference_ids', REFERENCE_IDS_CHECK),
   ],
 );
 
@@ -115,6 +133,7 @@ export const engines = serviceSchema.table(
     powerKw: float('power_kw').notNull(),
     sfoc: float('sfoc').notNull(),
     source: pg.text('source'),
+    referenceIds: referenceIdsColumn(),
     ...timestamps,
   },
   (table) => [
@@ -126,6 +145,7 @@ export const engines = serviceSchema.table(
     columnCheck('engines', 'power_kw', sql`power_kw >= 0`),
     columnCheck('engines', 'sfoc', sql`sfoc >= 0`),
     columnCheck('engines', 'source', sql`char_length(source) <= 2000`),
+    columnCheck('engines', 'reference_ids', REFERENCE_IDS_CHECK),
     pg.index('engines_kind_name_idx').on(table.kind, table.name),
   ],
 );
@@ -505,15 +525,21 @@ export const outbox = serviceSchema.table(
   },
   (table) => [
     pg.unique('outbox_seq_key').on(table.seq),
-    // Relay claims: the pending rows in seq order, and per vessel.
+    // Claims of the kit's per-key relay: the pending rows in seq order, and
+    // per vessel (names of the kit's outbox DDL, migration 0002).
     pg
-      .index('outbox_pending_idx')
+      .index('outbox_pending_seq_idx')
       .on(table.seq)
       .where(sql`published_at IS NULL AND failed_at IS NULL`),
     pg
-      .index('outbox_entity_pending_idx')
+      .index('outbox_pending_key_idx')
       .on(table.entityKey, table.seq)
       .where(sql`published_at IS NULL AND failed_at IS NULL`),
+    // Parked rows (aisits_outbox_failed_rows).
+    pg
+      .index('outbox_failed_idx')
+      .on(table.failedAt)
+      .where(sql`failed_at IS NOT NULL`),
     // Retention cleanup of published rows.
     pg
       .index('outbox_published_idx')

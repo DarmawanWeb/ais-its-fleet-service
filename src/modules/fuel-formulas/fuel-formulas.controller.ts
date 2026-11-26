@@ -4,7 +4,7 @@ import {
   type Principal,
   RequirePermissions,
 } from '@darmawanweb/ais-its-nest/auth';
-import { ApiPageResponse } from '@darmawanweb/ais-its-nest/http';
+import { ApiPageResponse, UuidParam } from '@darmawanweb/ais-its-nest/http';
 import {
   Body,
   Controller,
@@ -12,7 +12,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Param,
   Patch,
   Post,
   Query,
@@ -27,12 +26,15 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
-import { ID_PIPE } from '../common/params.js';
 import { ReferenceListQuery } from '../common/validation.js';
+import { ReferenceUsage } from '../snapshots/reference-usage.js';
+import { fuelFormulaProblem } from '../../domain/fuel-formula-problem.js';
 import {
   CreateFuelFormulaDto,
   FuelFormulaDto,
+  FuelFormulaValidationDto,
   UpdateFuelFormulaDto,
+  ValidateFuelFormulaDto,
 } from './dto/fuel-formula.dto.js';
 import { FuelFormulasService } from './fuel-formulas.service.js';
 
@@ -40,7 +42,10 @@ import { FuelFormulasService } from './fuel-formulas.service.js';
 @ApiTags('fuel-formulas')
 @Controller('fuel-formulas')
 export class FuelFormulasController {
-  constructor(private readonly formulas: FuelFormulasService) {}
+  constructor(
+    private readonly formulas: FuelFormulasService,
+    private readonly usage: ReferenceUsage,
+  ) {}
 
   @Get()
   @RequirePermissions('vessel:read')
@@ -48,11 +53,19 @@ export class FuelFormulasController {
   @ApiPageResponse(FuelFormulaDto)
   async list(
     @Query() query: ReferenceListQuery,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<Paginated<FuelFormulaDto>> {
     const page = await this.formulas.list(query);
+    const counts = await this.usage.countsFor(
+      principal,
+      'fuelFormula',
+      page.data.map((formula) => formula.id),
+    );
     return {
       ...page,
-      data: page.data.map((formula) => new FuelFormulaDto(formula)),
+      data: page.data.map(
+        (formula) => new FuelFormulaDto(formula, counts?.of(formula.id)),
+      ),
     };
   }
 
@@ -60,8 +73,28 @@ export class FuelFormulasController {
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a first fuel formula' })
   @ApiOkResponse({ type: FuelFormulaDto })
-  async get(@Param('id', ID_PIPE) id: string): Promise<FuelFormulaDto> {
-    return new FuelFormulaDto(await this.formulas.get(id));
+  async get(
+    @UuidParam() id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<FuelFormulaDto> {
+    const formula = await this.formulas.get(id);
+    const counts = await this.usage.countsFor(principal, 'fuelFormula', [id]);
+    return new FuelFormulaDto(formula, counts?.of(id));
+  }
+
+  @Post('validate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('vessel:read')
+  @ApiOperation({
+    summary: 'Check a formula against the safe grammar',
+    description:
+      'The grammar the service stores formulas with (contracts validateFuelFormula: numbers, speedKnot, + - * / ** ^, parentheses, exp, log/ln, sqrt, pow, abs, min, max; at most 500 characters, depth 32). ' +
+      'Always 200 with { valid, problem }: the first problem with a stable code, its position and token. Nothing is stored. ' +
+      'Clients on contracts >= 0.4 can run validateFuelFormula locally instead.',
+  })
+  @ApiOkResponse({ type: FuelFormulaValidationDto })
+  validate(@Body() body: ValidateFuelFormulaDto): FuelFormulaValidationDto {
+    return new FuelFormulaValidationDto(fuelFormulaProblem(body.formula));
   }
 
   @Post()
@@ -90,7 +123,7 @@ export class FuelFormulasController {
   })
   @ApiOkResponse({ type: FuelFormulaDto })
   async update(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body() body: UpdateFuelFormulaDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -108,7 +141,7 @@ export class FuelFormulasController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

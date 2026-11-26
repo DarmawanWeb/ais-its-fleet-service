@@ -1,16 +1,15 @@
 import type { Pool } from '@darmawanweb/ais-its-nest/db';
 import { describe, expect, it } from 'vitest';
 
-import {
-  inTransaction,
-  retryableSqlState,
-  TRANSACTION_RETRIES,
-} from './database.js';
+import { inTransaction, TRANSACTION_RETRIES } from './database.js';
 
 /** A driver error wrapped the way drizzle wraps it (`DrizzleQueryError`). */
 function drizzleError(code: string): Error {
   return new Error('Failed query: UPDATE …', {
-    cause: Object.assign(new Error('deadlock detected'), { code }),
+    cause: Object.assign(new Error('deadlock detected'), {
+      code,
+      severity: 'ERROR',
+    }),
   });
 }
 
@@ -30,15 +29,9 @@ function recordingPool(): { pool: Pool; statements: string[] } {
   };
 }
 
-describe('retryableSqlState', () => {
-  it('finds deadlocks and serialization failures behind drizzle wrappers', () => {
-    expect(retryableSqlState(drizzleError('40P01'))).toBe('40P01');
-    expect(retryableSqlState(drizzleError('40001'))).toBe('40001');
-    expect(retryableSqlState(drizzleError('23505'))).toBeUndefined();
-    expect(retryableSqlState(new Error('boom'))).toBeUndefined();
-  });
-});
-
+// Regression of the service's use of the kit's `withTransaction({ retries })`
+// (its retry loop of 0.1 is gone): a deadlock inside a drizzle query must be
+// re-run, other errors must not.
 describe('inTransaction', () => {
   it('re-runs a transaction that lost a deadlock inside a drizzle query', async () => {
     const { pool, statements } = recordingPool();
@@ -60,7 +53,7 @@ describe('inTransaction', () => {
     await expect(
       inTransaction(pool, () => {
         attempts += 1;
-        return Promise.reject(drizzleError('40P01'));
+        return Promise.reject(drizzleError('40001'));
       }),
     ).rejects.toThrow('Failed query');
     expect(attempts).toBe(TRANSACTION_RETRIES + 1);

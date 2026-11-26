@@ -9,6 +9,9 @@ const SOURCE =
   'extracts cross-checked with the ClassNK CII guide (official PDFs not fetched): re-verify against the ' +
   'official text before regulatory use.';
 
+/** The catalog references of {@link SOURCE} (docs/references/references.json). */
+const REFERENCE_IDS = ['imo-mepc-353-78', 'imo-mepc-354-78'] as const;
+
 type Vector = readonly [number, number, number, number];
 
 function type(
@@ -34,6 +37,7 @@ function type(
     d4,
     icon,
     source: extra.note === undefined ? SOURCE : `${SOURCE} Note: ${extra.note}`,
+    referenceIds: REFERENCE_IDS,
   };
 }
 

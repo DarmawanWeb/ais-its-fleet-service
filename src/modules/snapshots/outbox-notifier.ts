@@ -1,7 +1,7 @@
+import { OutboxRelay } from '@darmawanweb/ais-its-nest/nats';
 import { Injectable } from '@nestjs/common';
 
 import { FleetMetrics, type SnapshotReason } from './fleet-metrics.js';
-import { FleetOutboxRelay } from './outbox-relay.js';
 
 /**
  * Called after a transaction that enqueued snapshots committed: counts them
@@ -11,7 +11,7 @@ import { FleetOutboxRelay } from './outbox-relay.js';
 @Injectable()
 export class OutboxNotifier {
   constructor(
-    private readonly relay: FleetOutboxRelay,
+    private readonly relay: OutboxRelay,
     private readonly metrics: FleetMetrics,
   ) {}
 

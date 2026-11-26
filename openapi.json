@@ -102,6 +102,50 @@
                 "laid_up"
               ]
             }
+          },
+          {
+            "name": "mmsi",
+            "required": false,
+            "in": "query",
+            "description": "Batch identity lookup: only the vessels with these MMSIs (comma-separated, 1–100; unknown ones are simply absent). Pass a pageSize of at least their number to get all of them in one page.",
+            "schema": {
+              "pattern": "^[0-9]{9}(,[0-9]{9}){0,99}$",
+              "example": "525005223,525005224",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Sort key (ties by name, then id). gt, dwt and builtYear are technical data (spec §8.5): their values order only the vessels whose detail view you receive (your organization; every vessel for platform administrators); the others follow by name, in either order.",
+            "schema": {
+              "default": "name",
+              "type": "string",
+              "enum": [
+                "name",
+                "mmsi",
+                "imo",
+                "gt",
+                "dwt",
+                "builtYear",
+                "updatedAt"
+              ]
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Direction of `sort`; vessels without a value come last",
+            "schema": {
+              "default": "asc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
           }
         ],
         "responses": {
@@ -277,8 +321,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -333,8 +379,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -385,8 +433,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -422,8 +472,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -477,8 +529,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -534,8 +588,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -595,8 +651,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -656,8 +714,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -687,15 +747,17 @@
     },
     "/api/v2/vessels/{id}/republish": {
       "post": {
-        "description": "Requires super_admin (403 PLATFORM_ADMIN_REQUIRED otherwise).",
+        "description": "Enqueues one fleet.vessel.upserted.v1 with the current data; the relay publishes it asynchronously.\n\nRequires a platform administrator (super_admin); other users and API keys get 403 PLATFORM_ADMIN_REQUIRED.",
         "operationId": "VesselsController_republish",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -721,12 +783,15 @@
             }
           }
         },
-        "summary": "Re-enqueue the snapshot of a vessel (platform administrators)",
+        "summary": "Re-enqueue the snapshot of a vessel (super_admin)",
         "tags": [
           "vessels"
         ],
         "x-required-permissions": [
           "vessel:write"
+        ],
+        "x-required-roles": [
+          "super_admin"
         ]
       }
     },
@@ -864,8 +929,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -907,8 +974,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -959,8 +1028,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1122,8 +1193,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1165,8 +1238,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1217,8 +1292,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1392,8 +1469,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1435,8 +1514,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1487,8 +1568,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1650,8 +1733,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1693,8 +1778,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1745,8 +1832,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1771,6 +1860,52 @@
         ],
         "x-required-permissions": [
           "reference:write"
+        ]
+      }
+    },
+    "/api/v2/fuel-formulas/validate": {
+      "post": {
+        "description": "The grammar the service stores formulas with (contracts validateFuelFormula: numbers, speedKnot, + - * / ** ^, parentheses, exp, log/ln, sqrt, pow, abs, min, max; at most 500 characters, depth 32). Always 200 with { valid, problem }: the first problem with a stable code, its position and token. Nothing is stored. Clients on contracts >= 0.4 can run validateFuelFormula locally instead.",
+        "operationId": "FuelFormulasController_validate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateFuelFormulaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FuelFormulaValidationDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Check a formula against the safe grammar",
+        "tags": [
+          "fuel-formulas"
+        ],
+        "x-required-permissions": [
+          "vessel:read"
         ]
       }
     },
@@ -1918,8 +2053,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1960,8 +2097,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2012,8 +2151,10 @@
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "UUID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2191,7 +2332,7 @@
   "info": {
     "title": "AIS Maritime Intelligence — AIS ITS Fleet Service",
     "description": "Vessel master data and reference data (vessel types, fuels, engines, fuel formulas, ports, registry); publishes VesselSnapshotV1 to the FLEET stream",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "contact": {}
   },
   "tags": [
@@ -2310,7 +2451,9 @@
               "telemetry",
               "geo",
               "safety",
-              "surveillance"
+              "surveillance",
+              "notification",
+              "security"
             ],
             "nullable": true
           },
@@ -2328,6 +2471,7 @@
             "enum": [
               "implemented",
               "planned",
+              "not_implemented",
               "deprecated"
             ],
             "nullable": true
@@ -2559,6 +2703,23 @@
             "type": "string",
             "nullable": true
           },
+          "referenceIds": {
+            "example": [
+              "imo-mepc-353-78",
+              "imo-mepc-354-78"
+            ],
+            "description": "Ids of the methodology catalog's references behind the values (docs/references/references.json)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vesselCount": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "Vessels of every organization that use this row; a row in use cannot be deleted (409 REFERENCE_IN_USE). Present only for principals with reference:write (platform administrators): the count spans the technical data of every tenant (spec §8.5)."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2579,6 +2740,7 @@
           "d",
           "icon",
           "source",
+          "referenceIds",
           "createdAt",
           "updatedAt"
         ]
@@ -2740,6 +2902,22 @@
             "type": "string",
             "nullable": true
           },
+          "referenceIds": {
+            "example": [
+              "imo-mepc-364-79"
+            ],
+            "description": "Ids of the methodology catalog's references behind the values (docs/references/references.json)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vesselCount": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "Vessels of every organization that use this row; a row in use cannot be deleted (409 REFERENCE_IN_USE). Present only for principals with reference:write (platform administrators): the count spans the technical data of every tenant (spec §8.5)."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2757,6 +2935,7 @@
           "conversionFactor",
           "density",
           "source",
+          "referenceIds",
           "createdAt",
           "updatedAt"
         ]
@@ -2787,6 +2966,12 @@
           "source": {
             "type": "string",
             "nullable": true
+          },
+          "vesselCount": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "Vessels of every organization that use this row; a row in use cannot be deleted (409 REFERENCE_IN_USE). Present only for principals with reference:write (platform administrators): the count spans the technical data of every tenant (spec §8.5)."
           },
           "createdAt": {
             "type": "string",
@@ -2850,6 +3035,22 @@
             "type": "string",
             "nullable": true
           },
+          "referenceIds": {
+            "example": [
+              "legacy-mvp-backend"
+            ],
+            "description": "Ids of the methodology catalog's references behind the values (docs/references/references.json)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vesselCount": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "Vessels of every organization that use this row; a row in use cannot be deleted (409 REFERENCE_IN_USE). Present only for principals with reference:write (platform administrators): the count spans the technical data of every tenant (spec §8.5)."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2868,6 +3069,7 @@
           "powerKw",
           "sfoc",
           "source",
+          "referenceIds",
           "createdAt",
           "updatedAt"
         ]
@@ -3060,7 +3262,8 @@
         "properties": {
           "page": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 1000000
           },
           "pageSize": {
             "type": "integer",
@@ -3367,6 +3570,19 @@
             "maxLength": 2000,
             "nullable": true,
             "description": "Provenance of the values (regulation, table, verification note)"
+          },
+          "referenceIds": {
+            "maxItems": 20,
+            "uniqueItems": true,
+            "example": [
+              "imo-mepc-353-78",
+              "imo-mepc-354-78"
+            ],
+            "description": "Ids of the methodology catalog's references (docs/references/references.json, contracts REFERENCES) behind the values, next to the free-text `source`; unique, at most 20, each a reference of the catalog this service ships (else 400 VALIDATION_FAILED). [] clears them, null is refused.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -3444,6 +3660,19 @@
             "maxLength": 2000,
             "nullable": true,
             "description": "Provenance of the values (regulation, table, verification note)"
+          },
+          "referenceIds": {
+            "maxItems": 20,
+            "uniqueItems": true,
+            "example": [
+              "imo-mepc-353-78",
+              "imo-mepc-354-78"
+            ],
+            "description": "Ids of the methodology catalog's references (docs/references/references.json, contracts REFERENCES) behind the values, next to the free-text `source`; unique, at most 20, each a reference of the catalog this service ships (else 400 VALIDATION_FAILED). [] clears them, null is refused.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -3482,6 +3711,18 @@
             "type": "object",
             "maxLength": 2000,
             "nullable": true
+          },
+          "referenceIds": {
+            "maxItems": 20,
+            "uniqueItems": true,
+            "example": [
+              "imo-mepc-364-79"
+            ],
+            "description": "Ids of the methodology catalog's references (docs/references/references.json, contracts REFERENCES) behind the values, next to the free-text `source`; unique, at most 20, each a reference of the catalog this service ships (else 400 VALIDATION_FAILED). [] clears them, null is refused.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -3527,6 +3768,18 @@
             "type": "object",
             "maxLength": 2000,
             "nullable": true
+          },
+          "referenceIds": {
+            "maxItems": 20,
+            "uniqueItems": true,
+            "example": [
+              "imo-mepc-364-79"
+            ],
+            "description": "Ids of the methodology catalog's references (docs/references/references.json, contracts REFERENCES) behind the values, next to the free-text `source`; unique, at most 20, each a reference of the catalog this service ships (else 400 VALIDATION_FAILED). [] clears them, null is refused.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -3572,6 +3825,18 @@
             "type": "object",
             "maxLength": 2000,
             "nullable": true
+          },
+          "referenceIds": {
+            "maxItems": 20,
+            "uniqueItems": true,
+            "example": [
+              "legacy-mvp-backend"
+            ],
+            "description": "Ids of the methodology catalog's references (docs/references/references.json, contracts REFERENCES) behind the values, next to the free-text `source`; unique, at most 20, each a reference of the catalog this service ships (else 400 VALIDATION_FAILED). [] clears them, null is refused.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -3624,8 +3889,104 @@
             "type": "object",
             "maxLength": 2000,
             "nullable": true
+          },
+          "referenceIds": {
+            "maxItems": 20,
+            "uniqueItems": true,
+            "example": [
+              "legacy-mvp-backend"
+            ],
+            "description": "Ids of the methodology catalog's references (docs/references/references.json, contracts REFERENCES) behind the values, next to the free-text `source`; unique, at most 20, each a reference of the catalog this service ships (else 400 VALIDATION_FAILED). [] clears them, null is refused.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
+      },
+      "ValidateFuelFormulaDto": {
+        "type": "object",
+        "properties": {
+          "formula": {
+            "type": "string",
+            "example": "-0.0382 * speedKnot ** 2 + 0.8658 * speedKnot - 0.0197",
+            "maxLength": 2000,
+            "description": "A main- or auxiliary-engine formula. Up to 2000 characters are checked (the grammar itself allows 500: longer ones report FORMULA_TOO_LONG)."
+          }
+        },
+        "required": [
+          "formula"
+        ]
+      },
+      "FuelFormulaProblemDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "EMPTY_FORMULA",
+              "FORMULA_TOO_LONG",
+              "TOO_MANY_TOKENS",
+              "NESTED_TOO_DEEPLY",
+              "UNEXPECTED_CHARACTER",
+              "NUMBER_OUT_OF_RANGE",
+              "UNKNOWN_IDENTIFIER",
+              "WRONG_ARGUMENT_COUNT",
+              "EXPECTED_TOKEN",
+              "UNEXPECTED_END",
+              "UNEXPECTED_TOKEN",
+              "SYNTAX_ERROR"
+            ],
+            "example": "UNKNOWN_IDENTIFIER",
+            "description": "Stable code of the problem (for localized messages)"
+          },
+          "message": {
+            "type": "string",
+            "example": "Unknown identifier \"speed\" (allowed: speedKnot and the functions exp, log, ln, sqrt, pow, abs, min, max, optionally prefixed with Math.) at position 4",
+            "description": "The grammar's message (English), ending with the position"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 4,
+            "description": "Zero-based character offset of the problem"
+          },
+          "token": {
+            "type": "string",
+            "nullable": true,
+            "example": "speed",
+            "description": "The token at `position`, or null at the end of the formula and for EMPTY_FORMULA / FORMULA_TOO_LONG"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "position",
+          "token"
+        ]
+      },
+      "FuelFormulaValidationDto": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "example": false
+          },
+          "problem": {
+            "nullable": true,
+            "description": "The first problem; null when `valid`",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FuelFormulaProblemDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "valid",
+          "problem"
+        ]
       },
       "CreateFuelFormulaDto": {
         "type": "object",
@@ -3759,6 +4120,12 @@
           "source": {
             "type": "string",
             "nullable": true
+          },
+          "vesselCount": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "Vessels of every organization that use this row; a row in use cannot be deleted (409 REFERENCE_IN_USE). Present only for principals with reference:write (platform administrators): the count spans the technical data of every tenant (spec §8.5)."
           },
           "createdAt": {
             "type": "string",

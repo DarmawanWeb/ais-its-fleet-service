@@ -1,13 +1,23 @@
-import { describe, expect, it } from 'vitest';
-
 import {
-  checkFuelFormula,
-  FUEL_FORMULA_MAX_DEPTH,
-  FUEL_FORMULA_MAX_LENGTH,
+  FUEL_FORMULA_LIMITS,
   type FuelFormulaNode,
   FuelFormulaSyntaxError,
   parseFuelFormula,
-} from './fuel-formula.js';
+  validateFuelFormula,
+} from '@darmawanweb/ais-its-contracts/domain';
+import { describe, expect, it } from 'vitest';
+
+/*
+ * Regression tests of the first-fuel-formula grammar the service validates
+ * stored formulas with (`IsFuelFormula`): since contracts 0.4.0 it is the
+ * grammar shared with emission (`@darmawanweb/ais-its-contracts/domain`),
+ * which replaced the service's own parser of 0.1. These are the 0.1 tests,
+ * unchanged apart from the imports: limits, messages and positions must stay
+ * those formulas were accepted or refused with, and the corpus below records
+ * the verdicts of emission's former evaluator.
+ */
+const FUEL_FORMULA_MAX_LENGTH = FUEL_FORMULA_LIMITS.maxLength;
+const FUEL_FORMULA_MAX_DEPTH = FUEL_FORMULA_LIMITS.maxDepth;
 
 const SPEED: FuelFormulaNode = { kind: 'variable', name: 'speedKnot' };
 const num = (value: number): FuelFormulaNode => ({ kind: 'number', value });
@@ -120,7 +130,9 @@ describe('parseFuelFormula — grammar', () => {
       '+speedKnot',
       '0.5',
     ]) {
-      expect(checkFuelFormula(source), source).toMatchObject({ valid: true });
+      expect(validateFuelFormula(source), source).toMatchObject({
+        valid: true,
+      });
     }
   });
 
@@ -267,28 +279,36 @@ const SHARED_CORPUS = {
 
 describe('parseFuelFormula — corpus shared with the emission evaluator', () => {
   it.each(SHARED_CORPUS.bothAccept)('accepts %j', (formula) => {
-    expect(checkFuelFormula(formula).valid).toBe(true);
+    expect(validateFuelFormula(formula).valid).toBe(true);
   });
 
   it.each(SHARED_CORPUS.bothRefuse)('refuses %j', (formula) => {
-    expect(checkFuelFormula(formula).valid).toBe(false);
+    expect(validateFuelFormula(formula).valid).toBe(false);
   });
 
   it.each(SHARED_CORPUS.onlyEmissionAccepts)(
     'refuses %j (stricter limit than emission)',
     (formula) => {
-      expect(checkFuelFormula(formula).valid).toBe(false);
+      expect(validateFuelFormula(formula).valid).toBe(false);
     },
   );
 });
 
-describe('checkFuelFormula', () => {
+describe('validateFuelFormula', () => {
   it('reports instead of throwing', () => {
-    expect(checkFuelFormula('speedKnot +')).toEqual({
+    expect(validateFuelFormula('speedKnot +')).toEqual({
       valid: false,
-      message: 'Unexpected end of formula at position 11',
-      position: 11,
+      errors: [
+        {
+          message: 'Unexpected end of formula at position 11',
+          position: 11,
+        },
+      ],
     });
-    expect(checkFuelFormula('speedKnot')).toEqual({ valid: true, ast: SPEED });
+    expect(validateFuelFormula('speedKnot')).toEqual({
+      valid: true,
+      errors: [],
+    });
+    expect(parseFuelFormula('speedKnot')).toEqual(SPEED);
   });
 });

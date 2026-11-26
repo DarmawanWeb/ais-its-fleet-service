@@ -2,6 +2,10 @@ import {
   VESSEL_STATUSES,
   type VesselStatus,
 } from '@darmawanweb/ais-its-contracts/domain';
+import {
+  IsOptionalNotNull,
+  PageQueryDto,
+} from '@darmawanweb/ais-its-nest/http';
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -26,10 +30,17 @@ import {
 } from 'class-validator';
 
 import {
-  BoundedPageQueryDto,
+  MAX_MMSI_LOOKUP,
+  SORT_ORDERS,
+  type SortOrder,
+  VESSEL_SORT_KEYS,
+  type VesselSortKey,
+} from '../../../domain/vessel-list.js';
+import {
   CODE_PATTERN,
-  IsOptionalNonNull,
+  IsMmsiList,
   PatchType,
+  splitList,
   trimString,
   upperTrimString,
 } from '../../common/validation.js';
@@ -288,7 +299,7 @@ export class CreateVesselDto {
   readonly builtYear?: number | null;
 
   @ApiPropertyOptional({ enum: VESSEL_STATUSES, default: 'active' })
-  @IsOptionalNonNull()
+  @IsOptionalNotNull()
   @IsIn(VESSEL_STATUSES)
   readonly status?: VesselStatus;
 
@@ -329,7 +340,7 @@ export class CreateVesselDto {
     type: [VesselEngineInputDto],
     maxItems: MAX_VESSEL_ENGINES,
   })
-  @IsOptionalNonNull()
+  @IsOptionalNotNull()
   @IsArray()
   @ArrayMaxSize(MAX_VESSEL_ENGINES)
   @ValidateNested({ each: true })
@@ -343,7 +354,7 @@ export class CreateVesselDto {
     uniqueItems: true,
     description: 'Ports of call, in order',
   })
-  @IsOptionalNonNull()
+  @IsOptionalNotNull()
   @IsArray()
   @ArrayMaxSize(MAX_VESSEL_PORTS)
   @ArrayUnique()
@@ -355,7 +366,7 @@ export class CreateVesselDto {
     description:
       'Owning organization — platform administrators only (default: the active organization)',
   })
-  @IsOptionalNonNull()
+  @IsOptionalNotNull()
   @IsUUID()
   readonly orgId?: string;
 
@@ -364,7 +375,7 @@ export class CreateVesselDto {
     description:
       'Id of the legacy MVP document — platform administrators only (data migration)',
   })
-  @IsOptionalNonNull()
+  @IsOptionalNotNull()
   @IsString()
   @Length(1, 64)
   readonly legacyId?: string;
@@ -387,7 +398,7 @@ export class UpdateVesselDto extends PatchType(
 ) {}
 
 /** Query of `GET /vessels` (page-based list, spec §5). */
-export class ListVesselsQuery extends BoundedPageQueryDto {
+export class ListVesselsQuery extends PageQueryDto {
   @ApiPropertyOptional({
     description:
       'Name (case-insensitive substring), MMSI or IMO number (prefix of digits)',
@@ -421,4 +432,34 @@ export class ListVesselsQuery extends BoundedPageQueryDto {
   @IsOptional()
   @IsIn(VESSEL_STATUSES)
   readonly status?: VesselStatus;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: '525005223,525005224',
+    pattern: `^[0-9]{9}(,[0-9]{9}){0,${MAX_MMSI_LOOKUP - 1}}$`,
+    description: `Batch identity lookup: only the vessels with these MMSIs (comma-separated, 1–${MAX_MMSI_LOOKUP}; unknown ones are simply absent). Pass a pageSize of at least their number to get all of them in one page.`,
+  })
+  @IsOptional()
+  @Transform(splitList)
+  @IsMmsiList(MAX_MMSI_LOOKUP)
+  readonly mmsi?: string[];
+
+  @ApiPropertyOptional({
+    enum: VESSEL_SORT_KEYS,
+    default: 'name',
+    description:
+      'Sort key (ties by name, then id). gt, dwt and builtYear are technical data (spec §8.5): their values order only the vessels whose detail view you receive (your organization; every vessel for platform administrators); the others follow by name, in either order.',
+  })
+  @IsOptional()
+  @IsIn(VESSEL_SORT_KEYS)
+  readonly sort?: VesselSortKey;
+
+  @ApiPropertyOptional({
+    enum: SORT_ORDERS,
+    default: 'asc',
+    description: 'Direction of `sort`; vessels without a value come last',
+  })
+  @IsOptional()
+  @IsIn(SORT_ORDERS)
+  readonly order?: SortOrder;
 }

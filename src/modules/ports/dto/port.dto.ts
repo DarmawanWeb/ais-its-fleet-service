@@ -19,6 +19,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+import { VESSEL_COUNT_DESCRIPTION } from '../../snapshots/reference-usage.js';
 import {
   IsLonLat,
   PatchType,
@@ -136,13 +137,21 @@ export class PortDto {
   @ApiProperty({ type: String, nullable: true })
   readonly source: string | null;
 
+  @ApiPropertyOptional({
+    type: 'integer',
+    minimum: 0,
+    example: 3,
+    description: VESSEL_COUNT_DESCRIPTION,
+  })
+  readonly vesselCount?: number;
+
   @ApiProperty({ format: 'date-time' })
   readonly createdAt: string;
 
   @ApiProperty({ format: 'date-time' })
   readonly updatedAt: string;
 
-  constructor(port: Port) {
+  constructor(port: Port, vesselCount?: number) {
     this.id = port.id;
     this.name = port.name;
     this.code = port.code;
@@ -152,5 +161,6 @@ export class PortDto {
     this.source = port.source;
     this.createdAt = port.createdAt.toISOString();
     this.updatedAt = port.updatedAt.toISOString();
+    if (vesselCount !== undefined) this.vesselCount = vesselCount;
   }
 }

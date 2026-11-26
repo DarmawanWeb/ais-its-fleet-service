@@ -583,4 +583,173 @@ describe('reference data: vessel types, fuels, engines, fuel formulas, ports', (
       ).statusCode,
     ).toBe(204);
   });
+  it('shows how many vessels use each reference row to platform administrators only', async () => {
+    const references = await createReferenceSet(service);
+    const rows = [
+      ['vessel-types', references.typeId],
+      ['fuels', references.fuelId],
+      ['engines', references.mainEngineId],
+      ['engines', references.auxEngineId],
+      ['fuel-formulas', references.formulaId],
+      ['ports', references.portIds[0]],
+    ] as const;
+    const countOf = async (path: string, id: string) =>
+      bodyOf<{ vesselCount?: number }>(
+        await service.request(SUPER_ADMIN, 'GET', `/api/v2/${path}/${id}`),
+        200,
+      ).vesselCount;
+    for (const [path, id] of rows) {
+      expect(await countOf(path, id), path).toBe(0);
+    }
+    await createVessel(service, org.admin, references);
+    await createVessel(service, newOrganization().admin, references);
+    for (const [path, id] of rows) {
+      // Vessels of every organization; an engine fitted twice counts once.
+      expect(await countOf(path, id), path).toBe(2);
+      const viewerRow = bodyOf(
+        await service.request(org.admin, 'GET', `/api/v2/${path}/${id}`),
+        200,
+      );
+      expect(viewerRow, path).not.toHaveProperty('vesselCount');
+    }
+    // List rows carry it too (one grouped count per page).
+    const page = bodyOf<Page<{ id: string; vesselCount?: number }>>(
+      await service.request(
+        SUPER_ADMIN,
+        'GET',
+        `/api/v2/fuels?search=${references.fuelCode}`,
+      ),
+      200,
+    );
+    expect(page.data).toEqual([
+      expect.objectContaining({ id: references.fuelId, vesselCount: 2 }),
+    ]);
+    const viewerPage = bodyOf<Page<Record<string, unknown>>>(
+      await service.request(
+        org.viewer,
+        'GET',
+        `/api/v2/fuels?search=${references.fuelCode}`,
+      ),
+      200,
+    );
+    expect(viewerPage.data[0]).not.toHaveProperty('vesselCount');
+  });
+
+  it('links ship types, fuels and engines to the methodology catalog without republishing vessels', async () => {
+    const references = await createReferenceSet(service);
+    const vessel = await createVessel(service, org.admin, references);
+    const snapshotsOf = async () =>
+      (
+        await pool.query<{ count: number }>(
+          'SELECT count(*)::int AS count FROM outbox WHERE entity_key = $1',
+          [vessel.id],
+        )
+      ).rows[0]?.count ?? 0;
+    const before = await snapshotsOf();
+
+    for (const [path, id, referenceIds] of [
+      [
+        'vessel-types',
+        references.typeId,
+        ['imo-mepc-353-78', 'imo-mepc-354-78'],
+      ],
+      ['fuels', references.fuelId, ['imo-mepc-364-79']],
+      ['engines', references.mainEngineId, ['legacy-mvp-backend']],
+    ] as const) {
+      const url = `/api/v2/${path}/${id}`;
+      expect(
+        bodyOf(
+          await service.request(SUPER_ADMIN, 'PATCH', url, { referenceIds }),
+          200,
+        ).referenceIds,
+        path,
+      ).toEqual(referenceIds);
+      expect(
+        bodyOf(await service.request(org.viewer, 'GET', url), 200).referenceIds,
+        path,
+      ).toEqual(referenceIds);
+      for (const invalid of [['no-such-reference'], null]) {
+        const problem = problemOf(
+          await service.request(SUPER_ADMIN, 'PATCH', url, {
+            referenceIds: invalid,
+          }),
+          400,
+        );
+        expect(fieldsOf(problem), `${path} ${JSON.stringify(invalid)}`).toEqual(
+          ['referenceIds'],
+        );
+      }
+    }
+    // Provenance is not part of the snapshot: nothing was republished…
+    expect(await snapshotsOf()).toBe(before);
+    // …while a change of an embedded value still is.
+    bodyOf(
+      await service.request(
+        SUPER_ADMIN,
+        'PATCH',
+        `/api/v2/fuels/${references.fuelId}`,
+        { density: 0.85, referenceIds: [] },
+      ),
+      200,
+    );
+    expect(await snapshotsOf()).toBe(before + 1);
+
+    const created = await createReference(service, '/api/v2/fuels', {
+      code: uniqueCode('lng'),
+      name: 'LNG (test)',
+      carbonContent: 0.75,
+      conversionFactor: 2.75,
+      density: 0.45,
+      referenceIds: ['imo-mepc-364-79'],
+    });
+    expect(created.referenceIds).toEqual(['imo-mepc-364-79']);
+    const plain = await createReference(service, '/api/v2/engines', {
+      kind: 'auxiliary',
+      name: 'Generator (test)',
+      rpm: 1500,
+      powerKw: 100,
+      sfoc: 210,
+    });
+    expect(plain.referenceIds).toEqual([]);
+  });
+
+  it('checks formulas against the server grammar without storing them', async () => {
+    const validate = (actor: typeof org.viewer | null, body: object) =>
+      service.request(actor, 'POST', '/api/v2/fuel-formulas/validate', body);
+    expect(
+      bodyOf(
+        await validate(org.viewer, {
+          formula: '-0.0382 * speedKnot ** 2 + 0.8658 * speedKnot - 0.0197',
+        }),
+        200,
+      ),
+    ).toEqual({ valid: true, problem: null });
+    const invalid = bodyOf<{
+      valid: boolean;
+      problem: { code: string; message: string; position: number } | null;
+    }>(await validate(org.viewer, { formula: '2 * speed' }), 200);
+    expect(invalid).toMatchObject({
+      valid: false,
+      problem: { code: 'UNKNOWN_IDENTIFIER', position: 4, token: 'speed' },
+    });
+    expect(invalid.problem?.message).toMatch(
+      /^Unknown identifier "speed".* at position 4$/,
+    );
+    expect(
+      bodyOf(await validate(org.viewer, { formula: '1+'.repeat(300) }), 200)
+        .problem,
+    ).toMatchObject({ code: 'FORMULA_TOO_LONG', position: 500, token: null });
+    expect(fieldsOf(problemOf(await validate(org.viewer, {}), 400))).toEqual([
+      'formula',
+    ]);
+    expect(
+      fieldsOf(
+        problemOf(
+          await validate(org.viewer, { formula: 'x'.repeat(2001) }),
+          400,
+        ),
+      ),
+    ).toEqual(['formula']);
+    expect((await validate(null, { formula: '1' })).statusCode).toBe(401);
+  });
 });

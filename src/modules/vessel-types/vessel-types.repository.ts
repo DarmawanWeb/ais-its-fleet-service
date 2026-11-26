@@ -15,6 +15,14 @@ export type VesselTypeChanges = Partial<Omit<NewVesselType, 'id'>>;
 /** Name of the unique constraint on `code`. */
 export const VESSEL_TYPE_CODE_CONSTRAINT = 'vessel_types_code_key';
 
+/** `changes` with `referenceIds` copied into the mutable array drizzle writes. */
+function columnsOf(changes: VesselTypeChanges) {
+  const { referenceIds, ...columns } = changes;
+  return referenceIds === undefined
+    ? columns
+    : { ...columns, referenceIds: [...referenceIds] };
+}
+
 /** Drizzle access to `vessel_types`. */
 @Injectable()
 export class VesselTypesRepository {
@@ -62,7 +70,10 @@ export class VesselTypesRepository {
   }
 
   async insert(db: FleetDb, type: NewVesselType): Promise<VesselType> {
-    const [row] = await db.insert(vesselTypes).values(type).returning();
+    const [row] = await db
+      .insert(vesselTypes)
+      .values({ ...type, referenceIds: [...type.referenceIds] })
+      .returning();
     if (row === undefined)
       throw new Error('INSERT … RETURNING returned no row');
     return row;
@@ -76,7 +87,7 @@ export class VesselTypesRepository {
   ): Promise<VesselType | undefined> {
     const [row] = await db
       .update(vesselTypes)
-      .set({ ...changes, updatedAt: sql`clock_timestamp()` })
+      .set({ ...columnsOf(changes), updatedAt: sql`clock_timestamp()` })
       .where(eq(vesselTypes.id, id))
       .returning();
     return row;

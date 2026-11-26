@@ -1,3 +1,4 @@
+import { PageQueryDto } from '@darmawanweb/ais-its-nest/http';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, Length } from 'class-validator';
@@ -6,11 +7,11 @@ import {
   REGISTRY_MATCH_MODES,
   type RegistryMatchMode,
 } from '../../../domain/registry.js';
-import { BoundedPageQueryDto, trimString } from '../../common/validation.js';
+import { trimString } from '../../common/validation.js';
 import type { RegistryEntry } from '../registry.repository.js';
 
 /** Query of `GET /registry/search`. */
-export class RegistrySearchQuery extends BoundedPageQueryDto {
+export class RegistrySearchQuery extends PageQueryDto {
   @ApiProperty({
     example: 'dharma',
     minLength: 1,

@@ -25,6 +25,12 @@ import {
   vesselTypes,
 } from '../../db/schema.js';
 import type { EngineAssignment } from '../../domain/engine-assignment.js';
+import {
+  type SortOrder,
+  TECHNICAL_SORT_KEYS,
+  type TechnicalSortScope,
+  type VesselSortKey,
+} from '../../domain/vessel-list.js';
 import type { VesselDimensions, VesselRecord } from '../../domain/vessel.js';
 import { escapeLikePattern } from '../common/validation.js';
 import type { PortSummary, VesselTypeSummary } from './vessel-view.js';
@@ -41,6 +47,78 @@ export interface VesselFilter {
   readonly typeCode?: string | undefined;
   readonly orgId?: string | undefined;
   readonly status?: VesselRecord['status'] | undefined;
+  /** Only these MMSIs (batch identity lookup). */
+  readonly mmsi?: readonly number[] | undefined;
+}
+
+/** Order of `GET /vessels`. */
+export interface VesselSort {
+  readonly key: VesselSortKey;
+  readonly order: SortOrder;
+  /** Whose values a technical key ({@link TECHNICAL_SORT_KEYS}) may use. */
+  readonly technical: TechnicalSortScope;
+}
+
+/** The default order: by name. */
+export const DEFAULT_VESSEL_SORT: VesselSort = {
+  key: 'name',
+  order: 'asc',
+  technical: { kind: 'none' },
+};
+
+/** The value a sort key reads (dimensions through a key lookup, no join). */
+function sortColumn(key: VesselSortKey): SQL {
+  switch (key) {
+    case 'name':
+      return sql`lower(${vessels.name})`;
+    case 'mmsi':
+      return sql`${vessels.mmsi}`;
+    case 'imo':
+      return sql`${vessels.imo}`;
+    case 'builtYear':
+      return sql`${vessels.builtYear}`;
+    case 'updatedAt':
+      return sql`${vessels.updatedAt}`;
+    case 'gt':
+      return sql`(SELECT ${vesselDimensions.gt} FROM ${vesselDimensions} WHERE ${vesselDimensions.vesselId} = ${vessels.id})`;
+    case 'dwt':
+      return sql`(SELECT ${vesselDimensions.dwt} FROM ${vesselDimensions} WHERE ${vesselDimensions.vesselId} = ${vessels.id})`;
+    default: {
+      const unknown: never = key;
+      throw new Error(`Unknown sort key ${String(unknown)}`);
+    }
+  }
+}
+
+/**
+ * The ORDER BY of a list: the sort value (a technical value only where
+ * the principal may see it, else NULL), NULLs last in both directions, then
+ * name and id so pages are stable.
+ */
+function orderOf(sort: VesselSort): SQL[] {
+  let value = sortColumn(sort.key);
+  if (TECHNICAL_SORT_KEYS.has(sort.key)) {
+    switch (sort.technical.kind) {
+      case 'all':
+        break;
+      case 'organization':
+        value = sql`CASE WHEN ${vessels.orgId} = ${sort.technical.orgId} THEN ${value} END`;
+        break;
+      case 'none':
+        value = sql`NULL`;
+        break;
+      default: {
+        const unknown: never = sort.technical;
+        throw new Error(`Unknown scope ${JSON.stringify(unknown)}`);
+      }
+    }
+  }
+  const direction = sql.raw(sort.order === 'desc' ? 'DESC' : 'ASC');
+  return [
+    sql`${value} ${direction} NULLS LAST`,
+    asc(sql`lower(${vessels.name})`),
+    asc(vessels.id),
+  ];
 }
 
 /** A row of the vessel list: the vessel and the identity of its type. */
@@ -83,6 +161,7 @@ export class VesselsRepository {
     db: FleetDb,
     filter: VesselFilter,
     page: { readonly offset: number; readonly limit: number },
+    sort: VesselSort = DEFAULT_VESSEL_SORT,
   ): Promise<{ rows: VesselListRow[]; total: number }> {
     const where = and(
       filter.search === undefined ? undefined : searchCondition(filter.search),
@@ -93,6 +172,9 @@ export class VesselsRepository {
       filter.status === undefined
         ? undefined
         : eq(vessels.status, filter.status),
+      filter.mmsi === undefined
+        ? undefined
+        : inArray(vessels.mmsi, [...filter.mmsi]),
     );
     const [rows, totals] = await Promise.all([
       db
@@ -100,7 +182,7 @@ export class VesselsRepository {
         .from(vessels)
         .innerJoin(vesselTypes, eq(vesselTypes.id, vessels.typeId))
         .where(where)
-        .orderBy(asc(sql`lower(${vessels.name})`), asc(vessels.id))
+        .orderBy(...orderOf(sort))
         .limit(page.limit)
         .offset(page.offset),
       db

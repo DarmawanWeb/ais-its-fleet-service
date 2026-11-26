@@ -3,7 +3,7 @@ import { pointGeography } from '@darmawanweb/ais-its-nest/db';
 import { type SQL, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 
-import type { FleetTransaction } from '../db/database.js';
+import type { FleetDb, FleetTransaction } from '../db/database.js';
 import {
   engines,
   fuelFormulas,
@@ -37,6 +37,11 @@ export interface SeedReport {
   readonly ports: SeedCounts;
   /** Vessel snapshots re-enqueued because seeded rows they embed changed. */
   readonly republished: number;
+  /**
+   * Existing ship types, fuels and engines whose catalog reference ids were
+   * set to the seeded ones (no snapshot embeds them: nothing republished).
+   */
+  readonly referencesLinked: number;
 }
 
 interface UpsertedRow {
@@ -88,12 +93,47 @@ function counts(rows: readonly UpsertedRow[], total: number): SeedCounts {
 
 const RETURNING = { inserted: sql<boolean>`(xmax = 0)` };
 
+/** A seed row with catalog reference ids. */
+interface ReferencedSeed {
+  readonly code: string;
+  readonly referenceIds: readonly string[];
+}
+
+/**
+ * Sets the seeded `reference_ids` of existing rows of `table` that differ.
+ * A separate statement from the upsert: the ids are provenance that no
+ * vessel snapshot embeds, so linking them republishes nothing (new rows get
+ * them with their insert).
+ *
+ * @returns the number of rows changed
+ */
+async function linkReferences(
+  db: FleetDb,
+  table: typeof vesselTypes | typeof fuels | typeof engines,
+  seeds: readonly ReferencedSeed[],
+): Promise<number> {
+  const records = JSON.stringify(
+    seeds.map((seed) => ({
+      code: seed.code,
+      reference_ids: seed.referenceIds,
+    })),
+  );
+  const result = await db.execute(sql`
+    UPDATE ${table} AS t
+       SET reference_ids = s.reference_ids, updated_at = clock_timestamp()
+      FROM jsonb_to_recordset(${records}::jsonb) AS s(code text, reference_ids text[])
+     WHERE t.code = s.code AND t.reference_ids IS DISTINCT FROM s.reference_ids`);
+  return result.rowCount ?? 0;
+}
+
 /**
  * `pnpm seed`: idempotent upserts by `code` of the reference data — ship
  * types (MEPC.353(78)/MEPC.354(78)), fuels (MEPC.364(79)), the example
  * engines, fuel formula and ports of the case-study vessel. Every row
- * carries its `source`. Rows whose seeded values changed republish the
- * vessels embedding them, in the same transaction.
+ * carries its `source` (ship types, fuels and engines also the catalog
+ * `referenceIds`). Rows whose seeded values changed republish the vessels
+ * embedding them, in the same transaction; reference ids are linked without
+ * republishing (no snapshot embeds them).
  */
 export class ReferenceSeeder {
   constructor(private readonly snapshots: SnapshotOutbox) {}
@@ -102,7 +142,13 @@ export class ReferenceSeeder {
     const { db } = transaction;
     const typeRows = await db
       .insert(vesselTypes)
-      .values(VESSEL_TYPE_SEEDS.map((seed) => ({ id: newId(), ...seed })))
+      .values(
+        VESSEL_TYPE_SEEDS.map((seed) => ({
+          id: newId(),
+          ...seed,
+          referenceIds: [...seed.referenceIds],
+        })),
+      )
       .onConflictDoUpdate({
         target: vesselTypes.code,
         ...upsertBy({
@@ -122,7 +168,13 @@ export class ReferenceSeeder {
       .returning({ id: vesselTypes.id, ...RETURNING });
     const fuelRows = await db
       .insert(fuels)
-      .values(FUEL_SEEDS.map((seed) => ({ id: newId(), ...seed })))
+      .values(
+        FUEL_SEEDS.map((seed) => ({
+          id: newId(),
+          ...seed,
+          referenceIds: [...seed.referenceIds],
+        })),
+      )
       .onConflictDoUpdate({
         target: fuels.code,
         ...upsertBy({
@@ -136,7 +188,13 @@ export class ReferenceSeeder {
       .returning({ id: fuels.id, ...RETURNING });
     const engineRows = await db
       .insert(engines)
-      .values(ENGINE_SEEDS.map((seed) => ({ id: newId(), ...seed })))
+      .values(
+        ENGINE_SEEDS.map((seed) => ({
+          id: newId(),
+          ...seed,
+          referenceIds: [...seed.referenceIds],
+        })),
+      )
       .onConflictDoUpdate({
         target: engines.code,
         ...upsertBy({
@@ -205,6 +263,10 @@ export class ReferenceSeeder {
         filter,
       );
     }
+    const referencesLinked =
+      (await linkReferences(db, vesselTypes, VESSEL_TYPE_SEEDS)) +
+      (await linkReferences(db, fuels, FUEL_SEEDS)) +
+      (await linkReferences(db, engines, ENGINE_SEEDS));
     return {
       vesselTypes: counts(typeRows, VESSEL_TYPE_SEEDS.length),
       fuels: counts(fuelRows, FUEL_SEEDS.length),
@@ -212,6 +274,7 @@ export class ReferenceSeeder {
       fuelFormulas: counts(formulaRows, FUEL_FORMULA_SEEDS.length),
       ports: counts(portRows, PORT_SEEDS.length),
       republished,
+      referencesLinked,
     };
   }
 }

@@ -88,6 +88,8 @@ export interface VesselType {
   readonly icon: string | null;
   /** Provenance of the values. */
   readonly source: string | null;
+  /** Ids of the methodology catalog's references behind the values. */
+  readonly referenceIds: readonly string[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -104,6 +106,8 @@ export interface Fuel {
   /** Density, t/m³ (= kg/L). */
   readonly density: number;
   readonly source: string | null;
+  /** Ids of the methodology catalog's references behind the values. */
+  readonly referenceIds: readonly string[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -121,6 +125,8 @@ export interface Engine {
   /** Specific fuel oil consumption, g/kWh. */
   readonly sfoc: number;
   readonly source: string | null;
+  /** Ids of the methodology catalog's references behind the values. */
+  readonly referenceIds: readonly string[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

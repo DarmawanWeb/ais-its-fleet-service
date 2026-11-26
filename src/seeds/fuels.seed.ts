@@ -7,6 +7,9 @@ const CF_SOURCE =
   'Cf (t CO2/t fuel) and carbon content: IMO MEPC.364(79) (2022 EEDI calculation guidelines), table of ' +
   'conversion factors (verified 2026-11-21 against IMO text extracts).';
 
+/** The catalog reference of the Cf values (docs/references/references.json). */
+const REFERENCE_IDS = ['imo-mepc-364-79'] as const;
+
 function fuel(
   code: string,
   name: string,
@@ -22,6 +25,7 @@ function fuel(
     conversionFactor,
     density,
     source: `${CF_SOURCE} Density (t/m3 = kg/L): ${densityNote} TODO: verify against the bunker delivery note of the vessel.`,
+    referenceIds: REFERENCE_IDS,
   };
 }
 

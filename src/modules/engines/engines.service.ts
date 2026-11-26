@@ -13,6 +13,7 @@ import type { FleetDb } from '../../db/database.js';
 import type { Engine } from '../../domain/vessel.js';
 import { ReferenceInUseError, ReferenceNotFoundError } from '../../errors.js';
 import {
+  changesEmbedded,
   definedChanges,
   deleteUnusedReference,
   type ReferenceChange,
@@ -28,6 +29,14 @@ import {
   type EngineChanges,
   EnginesRepository,
 } from './engines.repository.js';
+
+/** The members vessel snapshots embed: only their changes republish vessels. */
+const ENGINE_EMBEDDED: readonly (keyof EngineChanges)[] = [
+  'name',
+  'rpm',
+  'powerKw',
+  'sfoc',
+];
 
 /**
  * The engine catalogue (reference data, legacy `MainEngine` and
@@ -86,6 +95,7 @@ export class EnginesService {
           powerKw: body.powerKw,
           sfoc: body.sfoc,
           source: body.source ?? null,
+          referenceIds: body.referenceIds ?? [],
         }),
     );
     await this.audit.record(
@@ -124,7 +134,9 @@ export class EnginesService {
           id,
           snapshots: this.snapshots,
           notifier: this.notifier,
-          embeddedBy: { engineId: id },
+          embeddedBy: changesEmbedded(changes, ENGINE_EMBEDDED)
+            ? { engineId: id }
+            : null,
           update: (db) => this.updateChecked(db, id, changes),
         }),
     );

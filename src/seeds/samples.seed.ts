@@ -18,6 +18,12 @@ function sampleSource(collection: string): string {
 }
 
 /**
+ * The catalog reference of the legacy samples (the MVP backend repository
+ * holds the Postman collections); the thesis itself is not catalogued yet.
+ */
+const SAMPLE_REFERENCE_IDS = ['legacy-mvp-backend'] as const;
+
+/**
  * Example engines of the case-study vessel: main engine NIIGATA 6M28BET
  * (2 × 2100 at 390 rpm, SFOC 179.2 g/kWh) and auxiliary generator MAN
  * D2866LE (2 × 276 kW at 1800 rpm, SFOC 207 g/kWh).
@@ -36,6 +42,7 @@ export const ENGINE_SEEDS: readonly EngineSeed[] = [
     powerKw: 2100,
     sfoc: 179.2,
     source: `${sampleSource('3.5 Ships - Main Engine')} Rating unit (kW or PS) unconfirmed.`,
+    referenceIds: SAMPLE_REFERENCE_IDS,
   },
   // SOURCE: thesis — needs citation (generator data sheet of the case-study vessel).
   {
@@ -46,6 +53,7 @@ export const ENGINE_SEEDS: readonly EngineSeed[] = [
     powerKw: 276,
     sfoc: 207,
     source: sampleSource('3.6 Ships - Auxiliary Engine'),
+    referenceIds: SAMPLE_REFERENCE_IDS,
   },
 ];
 

@@ -1,15 +1,16 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { MAX_PAGE } from '@darmawanweb/ais-its-nest/http';
 import { describe, expect, it } from 'vitest';
 
 import { SAMPLE_DIMENSIONS } from '../../../../test/fixtures/sample-vessel.js';
-import { MAX_PAGE, ReferenceListQuery } from '../../common/validation.js';
+import { ReferenceListQuery } from '../../common/validation.js';
 import { UpdateEngineDto } from '../../engines/dto/engine.dto.js';
 import {
   CreateFuelFormulaDto,
   UpdateFuelFormulaDto,
 } from '../../fuel-formulas/dto/fuel-formula.dto.js';
-import { UpdateFuelDto } from '../../fuels/dto/fuel.dto.js';
+import { CreateFuelDto, UpdateFuelDto } from '../../fuels/dto/fuel.dto.js';
 import { UpdatePortDto } from '../../ports/dto/port.dto.js';
 import { RegistrySearchQuery } from '../../registry/dto/registry.dto.js';
 import { UpdateVesselTypeDto } from '../../vessel-types/dto/vessel-type.dto.js';
@@ -304,5 +305,117 @@ describe('CreateFuelFormulaDto', () => {
         ) as unknown,
       },
     });
+  });
+});
+
+describe('ListVesselsQuery batch lookup and sort', () => {
+  it('reads mmsi as a comma-separated or repeated list of MMSIs', async () => {
+    expect(await errorsOf(ListVesselsQuery, { mmsi: '525005223' })).toEqual({});
+    expect(
+      await errorsOf(ListVesselsQuery, { mmsi: '525005223, 525005224' }),
+    ).toEqual({});
+    expect(
+      await errorsOf(ListVesselsQuery, { mmsi: ['525005223', '525005224'] }),
+    ).toEqual({});
+    const query = plainToInstance(ListVesselsQuery, {
+      mmsi: '525005223,525005224',
+    });
+    expect(query.mmsi).toEqual(['525005223', '525005224']);
+  });
+
+  it.each([
+    '',
+    '525005223,',
+    '0525005223',
+    '52500522',
+    '5250052e2',
+    '525005223;525005224',
+    Array.from({ length: 101 }, (_, index) => String(525_000_000 + index)).join(
+      ',',
+    ),
+  ])('refuses mmsi=%j', async (mmsi) => {
+    expect(await errorsOf(ListVesselsQuery, { mmsi })).toEqual({
+      mmsi: ['isMmsiList'],
+    });
+  });
+
+  it('accepts the sort keys and orders and nothing else', async () => {
+    for (const sort of [
+      'name',
+      'mmsi',
+      'imo',
+      'gt',
+      'dwt',
+      'builtYear',
+      'updatedAt',
+    ]) {
+      expect(
+        await errorsOf(ListVesselsQuery, { sort, order: 'desc' }),
+        sort,
+      ).toEqual({});
+    }
+    expect(await errorsOf(ListVesselsQuery, { sort: 'orgId' })).toEqual({
+      sort: ['isIn'],
+    });
+    expect(await errorsOf(ListVesselsQuery, { order: 'up' })).toEqual({
+      order: ['isIn'],
+    });
+  });
+});
+
+describe('referenceIds of ship types, fuels and engines', () => {
+  const create = {
+    code: 'diesel_gas_oil',
+    name: 'Diesel/Gas Oil',
+    carbonContent: 0.8744,
+    conversionFactor: 3.206,
+    density: 0.86,
+  };
+
+  it('accepts ids of the methodology catalog, unique, and [] to clear', async () => {
+    expect(
+      await errorsOf(CreateFuelDto, {
+        ...create,
+        referenceIds: ['imo-mepc-364-79'],
+      }),
+    ).toEqual({});
+    expect(await errorsOf(CreateFuelDto, create)).toEqual({});
+    for (const type of [UpdateVesselTypeDto, UpdateFuelDto, UpdateEngineDto]) {
+      expect(await errorsOf(type, { referenceIds: [] }), type.name).toEqual({});
+      expect(
+        await errorsOf(type, {
+          referenceIds: ['imo-mepc-353-78', 'legacy-mvp-backend'],
+        }),
+        type.name,
+      ).toEqual({});
+    }
+  });
+
+  it('refuses unknown or duplicate ids, too many ids and null', async () => {
+    for (const type of [UpdateVesselTypeDto, UpdateFuelDto, UpdateEngineDto]) {
+      expect(
+        await errorsOf(type, { referenceIds: ['no-such-reference'] }),
+        type.name,
+      ).toEqual({ referenceIds: ['isCatalogReference'] });
+      expect(
+        await errorsOf(type, {
+          referenceIds: ['imo-mepc-364-79', 'imo-mepc-364-79'],
+        }),
+        type.name,
+      ).toEqual({ referenceIds: ['arrayUnique'] });
+      expect(
+        await errorsOf(type, {
+          referenceIds: Array.from({ length: 21 }, () => 'imo-mepc-364-79'),
+        }),
+        type.name,
+      ).toEqual({ referenceIds: ['arrayMaxSize', 'arrayUnique'] });
+      // null (a NOT NULL column) and a bare string fail as non-arrays.
+      for (const referenceIds of [null, 'imo-mepc-364-79']) {
+        expect(
+          (await errorsOf(type, { referenceIds })).referenceIds,
+          type.name,
+        ).toContain('isArray');
+      }
+    }
   });
 });
