@@ -13,6 +13,7 @@ import type { FleetDb } from '../../db/database.js';
 import type { Fuel } from '../../domain/vessel.js';
 import { ReferenceNotFoundError } from '../../errors.js';
 import {
+  changesEmbedded,
   definedChanges,
   deleteUnusedReference,
   type ReferenceChange,
@@ -24,6 +25,15 @@ import { SnapshotOutbox } from '../snapshots/snapshot-outbox.js';
 import { VesselAggregatesRepository } from '../snapshots/vessel-aggregates.repository.js';
 import type { CreateFuelDto, UpdateFuelDto } from './dto/fuel.dto.js';
 import { FUEL_CODE_CONSTRAINT, FuelsRepository } from './fuels.repository.js';
+
+/** The members vessel snapshots embed: only their changes republish vessels. */
+const FUEL_EMBEDDED: readonly (keyof UpdateFuelDto)[] = [
+  'code',
+  'name',
+  'carbonContent',
+  'conversionFactor',
+  'density',
+];
 
 /**
  * Fuels (reference data): CRUD with unique codes; a change (e.g. a corrected
@@ -78,6 +88,7 @@ export class FuelsService {
           conversionFactor: body.conversionFactor,
           density: body.density,
           source: body.source ?? null,
+          referenceIds: body.referenceIds ?? [],
         }),
     );
     await this.audit.record(
@@ -116,7 +127,9 @@ export class FuelsService {
           id,
           snapshots: this.snapshots,
           notifier: this.notifier,
-          embeddedBy: { fuelId: id },
+          embeddedBy: changesEmbedded(changes, FUEL_EMBEDDED)
+            ? { fuelId: id }
+            : null,
           update: (db) => this.repository.update(db, id, changes),
         }),
     );

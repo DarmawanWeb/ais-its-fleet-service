@@ -1,6 +1,10 @@
+import { IsOptionalNotNull } from '@darmawanweb/ais-its-nest/http';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -12,10 +16,14 @@ import {
   Min,
 } from 'class-validator';
 
+import { VESSEL_COUNT_DESCRIPTION } from '../../snapshots/reference-usage.js';
 import type { Fuel } from '../../../domain/vessel.js';
 import {
   CODE_PATTERN,
+  IsCatalogReference,
+  MAX_REFERENCE_IDS,
   PatchType,
+  REFERENCE_IDS_DESCRIPTION,
   trimString,
 } from '../../common/validation.js';
 
@@ -71,6 +79,20 @@ export class CreateFuelDto {
   @IsString()
   @MaxLength(2000)
   readonly source?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: MAX_REFERENCE_IDS,
+    uniqueItems: true,
+    example: ['imo-mepc-364-79'],
+    description: REFERENCE_IDS_DESCRIPTION,
+  })
+  @IsOptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_REFERENCE_IDS)
+  @ArrayUnique()
+  @IsCatalogReference({ each: true })
+  readonly referenceIds?: string[];
 }
 
 /** `PATCH /fuels/:id`: any subset of the create fields; `null` clears `source` only. */
@@ -99,13 +121,29 @@ export class FuelDto {
   @ApiProperty({ type: String, nullable: true })
   readonly source: string | null;
 
+  @ApiProperty({
+    type: [String],
+    example: ['imo-mepc-364-79'],
+    description:
+      "Ids of the methodology catalog's references behind the values (docs/references/references.json)",
+  })
+  readonly referenceIds: string[];
+
+  @ApiPropertyOptional({
+    type: 'integer',
+    minimum: 0,
+    example: 3,
+    description: VESSEL_COUNT_DESCRIPTION,
+  })
+  readonly vesselCount?: number;
+
   @ApiProperty({ format: 'date-time' })
   readonly createdAt: string;
 
   @ApiProperty({ format: 'date-time' })
   readonly updatedAt: string;
 
-  constructor(fuel: Fuel) {
+  constructor(fuel: Fuel, vesselCount?: number) {
     this.id = fuel.id;
     this.code = fuel.code;
     this.name = fuel.name;
@@ -113,7 +151,9 @@ export class FuelDto {
     this.conversionFactor = fuel.conversionFactor;
     this.density = fuel.density;
     this.source = fuel.source;
+    this.referenceIds = [...fuel.referenceIds];
     this.createdAt = fuel.createdAt.toISOString();
     this.updatedAt = fuel.updatedAt.toISOString();
+    if (vesselCount !== undefined) this.vesselCount = vesselCount;
   }
 }

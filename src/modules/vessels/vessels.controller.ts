@@ -3,8 +3,13 @@ import {
   CurrentPrincipal,
   type Principal,
   RequirePermissions,
+  RequirePlatformAdmin,
 } from '@darmawanweb/ais-its-nest/auth';
-import { PageMetaDto } from '@darmawanweb/ais-its-nest/http';
+import {
+  MmsiParam,
+  PageMetaDto,
+  UuidParam,
+} from '@darmawanweb/ais-its-nest/http';
 import {
   Body,
   Controller,
@@ -12,7 +17,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Param,
   Patch,
   Post,
   Put,
@@ -28,12 +32,10 @@ import {
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
-import { ID_PIPE, MmsiParam } from '../common/params.js';
 import { PHOTO_MAX_BYTES } from '../../domain/photo.js';
 import { ArrayBodyPipe, UuidArrayBodyPipe } from '../common/array-body.pipe.js';
 import {
@@ -118,14 +120,10 @@ export class VesselsController {
   @Get('by-mmsi/:mmsi')
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a vessel by MMSI' })
-  @ApiParam({
-    name: 'mmsi',
-    description: 'MMSI: exactly nine digits',
-    schema: { type: 'string', pattern: '^[0-9]{9}$', example: '525005223' },
-  })
   @ApiOkResponse({ schema: VESSEL_VIEW_SCHEMA })
   async getByMmsi(
-    @MmsiParam() mmsi: number,
+    @MmsiParam('mmsi', { description: 'MMSI: exactly nine digits' })
+    mmsi: number,
     @CurrentPrincipal() principal: Principal,
   ): Promise<VesselSummaryDto | VesselDetailDto> {
     return toVesselDto(await this.vessels.get({ mmsi }, principal));
@@ -136,7 +134,7 @@ export class VesselsController {
   @ApiOperation({ summary: 'Get a vessel' })
   @ApiOkResponse({ schema: VESSEL_VIEW_SCHEMA })
   async get(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
   ): Promise<VesselSummaryDto | VesselDetailDto> {
     return toVesselDto(await this.vessels.get({ id }, principal));
@@ -149,7 +147,7 @@ export class VesselsController {
   })
   @ApiOkResponse({ type: VesselDetailDto })
   async update(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body() body: UpdateVesselDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -165,7 +163,7 @@ export class VesselsController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {
@@ -177,7 +175,7 @@ export class VesselsController {
   @ApiOperation({ summary: 'Replace the dimensions and hull coefficients' })
   @ApiOkResponse({ type: VesselDetailDto })
   async replaceDimensions(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body() body: VesselDimensionsDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -197,7 +195,7 @@ export class VesselsController {
   @ApiBody({ type: [VesselEngineInputDto] })
   @ApiOkResponse({ type: VesselDetailDto })
   async replaceEngines(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body(new ArrayBodyPipe(VesselEngineInputDto, MAX_VESSEL_ENGINES))
     engines: VesselEngineInputDto[],
     @CurrentPrincipal() principal: Principal,
@@ -221,7 +219,7 @@ export class VesselsController {
   })
   @ApiOkResponse({ type: VesselDetailDto })
   async replacePorts(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body(new UuidArrayBodyPipe(MAX_VESSEL_PORTS)) portIds: string[],
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -247,7 +245,7 @@ export class VesselsController {
   })
   @ApiCreatedResponse({ type: VesselDetailDto })
   async uploadPhoto(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<VesselDetailDto> {
@@ -263,7 +261,7 @@ export class VesselsController {
   })
   @ApiNoContentResponse()
   async removePhoto(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {
@@ -273,14 +271,19 @@ export class VesselsController {
   @Post(':id/republish')
   @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermissions('vessel:write')
+  @RequirePlatformAdmin()
   @ApiOperation({
-    summary: 'Re-enqueue the snapshot of a vessel (platform administrators)',
+    summary: 'Re-enqueue the snapshot of a vessel (super_admin)',
+    // The kit appends its generic platform-admin sentence below this one;
+    // its "API keys get 403" holds only on routes that accept API keys.
     description:
-      'Requires super_admin (403 PLATFORM_ADMIN_REQUIRED otherwise).',
+      'Enqueues one fleet.vessel.upserted.v1 with the current data; the relay publishes it asynchronously. ' +
+      'Access tokens only: no fleet route accepts API keys, so a request with X-API-Key gets ' +
+      '401 INVALID_API_KEY before the administrator check (the note below applies to API keys only on routes that accept them).',
   })
   @ApiAcceptedResponse({ type: RepublishResultDto })
   async republish(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<RepublishResultDto> {

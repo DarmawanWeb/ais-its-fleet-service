@@ -4,7 +4,7 @@ import {
   type Principal,
   RequirePermissions,
 } from '@darmawanweb/ais-its-nest/auth';
-import { ApiPageResponse } from '@darmawanweb/ais-its-nest/http';
+import { ApiPageResponse, UuidParam } from '@darmawanweb/ais-its-nest/http';
 import {
   Body,
   Controller,
@@ -12,7 +12,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Param,
   Patch,
   Post,
   Query,
@@ -27,36 +26,57 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
+import { ReferenceUsage } from '../snapshots/reference-usage.js';
 import {
   CreateEngineDto,
   EngineDto,
   ListEnginesQuery,
   UpdateEngineDto,
 } from './dto/engine.dto.js';
-import { ID_PIPE } from '../common/params.js';
 import { EnginesService } from './engines.service.js';
 
 /** Engine catalogue: `/api/v2/engines?kind=` (spec §13.3). */
 @ApiTags('engines')
 @Controller('engines')
 export class EnginesController {
-  constructor(private readonly engines: EnginesService) {}
+  constructor(
+    private readonly engines: EnginesService,
+    private readonly usage: ReferenceUsage,
+  ) {}
 
   @Get()
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'List engines (main or auxiliary)' })
   @ApiPageResponse(EngineDto)
-  async list(@Query() query: ListEnginesQuery): Promise<Paginated<EngineDto>> {
+  async list(
+    @Query() query: ListEnginesQuery,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<Paginated<EngineDto>> {
     const page = await this.engines.list(query);
-    return { ...page, data: page.data.map((engine) => new EngineDto(engine)) };
+    const counts = await this.usage.countsFor(
+      principal,
+      'engine',
+      page.data.map((engine) => engine.id),
+    );
+    return {
+      ...page,
+      data: page.data.map(
+        (engine) => new EngineDto(engine, counts?.of(engine.id)),
+      ),
+    };
   }
 
   @Get(':id')
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get an engine' })
   @ApiOkResponse({ type: EngineDto })
-  async get(@Param('id', ID_PIPE) id: string): Promise<EngineDto> {
-    return new EngineDto(await this.engines.get(id));
+  async get(
+    @UuidParam() id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<EngineDto> {
+    const engine = await this.engines.get(id);
+    const counts = await this.usage.countsFor(principal, 'engine', [id]);
+    return new EngineDto(engine, counts?.of(id));
   }
 
   @Post()
@@ -80,7 +100,7 @@ export class EnginesController {
   })
   @ApiOkResponse({ type: EngineDto })
   async update(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body() body: UpdateEngineDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -97,7 +117,7 @@ export class EnginesController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

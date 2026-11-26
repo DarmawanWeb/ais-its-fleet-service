@@ -4,6 +4,7 @@ import { createLogger, loadConfig } from '@darmawanweb/ais-its-nest';
 import {
   createDatabasePool,
   databasePoolSettings,
+  sanitizeError,
 } from '@darmawanweb/ais-its-nest/db';
 
 import { configSchema } from './config.js';
@@ -49,7 +50,7 @@ if (file === undefined) {
     );
     logger.info({ report }, 'Registry particulars imported');
   } catch (error) {
-    logger.error({ err: error }, 'Registry import failed');
+    logger.error({ err: sanitizeError(error) }, 'Registry import failed');
     process.exitCode = 1;
   } finally {
     await pool.end();

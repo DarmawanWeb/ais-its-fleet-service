@@ -44,6 +44,7 @@ export const MAIN_ENGINE: Engine = {
   powerKw: 2100,
   sfoc: 179.2,
   source: null,
+  referenceIds: [],
   createdAt: CREATED_AT,
   updatedAt: CREATED_AT,
 };
@@ -57,6 +58,7 @@ export const AUX_ENGINE: Engine = {
   powerKw: 276,
   sfoc: 207,
   source: null,
+  referenceIds: [],
   createdAt: CREATED_AT,
   updatedAt: CREATED_AT,
 };
@@ -104,6 +106,7 @@ export function sampleAggregate(
       d4: 1.3,
       icon: 'ro-rop',
       source: null,
+      referenceIds: [],
       createdAt: CREATED_AT,
       updatedAt: CREATED_AT,
     },
@@ -115,6 +118,7 @@ export function sampleAggregate(
       conversionFactor: 3.206,
       density: 0.86,
       source: null,
+      referenceIds: [],
       createdAt: CREATED_AT,
       updatedAt: CREATED_AT,
     },

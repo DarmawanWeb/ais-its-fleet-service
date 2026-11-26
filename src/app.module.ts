@@ -16,6 +16,7 @@ import { RegistryModule } from './modules/registry/registry.module.js';
 import { SnapshotsModule } from './modules/snapshots/snapshots.module.js';
 import { VesselTypesModule } from './modules/vessel-types/vessel-types.module.js';
 import { VesselsModule } from './modules/vessels/vessels.module.js';
+import { MIGRATIONS_DIR } from './service.js';
 
 /**
  * Root module. `bootstrapService()` wraps it in the kit's platform root module
@@ -25,8 +26,9 @@ import { VesselsModule } from './modules/vessels/vessels.module.js';
  */
 @Module({
   imports: [
-    // pg pool + drizzle (search_path=<DATABASE_SCHEMA>,public); migrations on boot.
-    DatabaseModule.forRoot({ schema }),
+    // pg pool + drizzle (search_path=<DATABASE_SCHEMA>,public); migrations on boot
+    // from this package's migrations/ (not the working directory).
+    DatabaseModule.forRoot({ schema, migrationsDir: MIGRATIONS_DIR }),
     // This service produces the FLEET stream (created / widened at boot, spec §7.2).
     NatsModule.forRoot({ streams: ['FLEET'] }),
     // Global default-deny guard: every route needs a principal unless @Public().

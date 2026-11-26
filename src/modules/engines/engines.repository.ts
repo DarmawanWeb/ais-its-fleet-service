@@ -16,6 +16,14 @@ export type EngineChanges = Partial<Omit<NewEngine, 'id'>>;
 /** Name of the unique constraint on `code`. */
 export const ENGINE_CODE_CONSTRAINT = 'engines_code_key';
 
+/** `changes` with `referenceIds` copied into the mutable array drizzle writes. */
+function columnsOf(changes: EngineChanges) {
+  const { referenceIds, ...columns } = changes;
+  return referenceIds === undefined
+    ? columns
+    : { ...columns, referenceIds: [...referenceIds] };
+}
+
 /** Drizzle access to `engines`. */
 @Injectable()
 export class EnginesRepository {
@@ -74,7 +82,10 @@ export class EnginesRepository {
   }
 
   async insert(db: FleetDb, engine: NewEngine): Promise<Engine> {
-    const [row] = await db.insert(engines).values(engine).returning();
+    const [row] = await db
+      .insert(engines)
+      .values({ ...engine, referenceIds: [...engine.referenceIds] })
+      .returning();
     if (row === undefined)
       throw new Error('INSERT … RETURNING returned no row');
     return row;
@@ -88,7 +99,7 @@ export class EnginesRepository {
   ): Promise<Engine | undefined> {
     const [row] = await db
       .update(engines)
-      .set({ ...changes, updatedAt: sql`clock_timestamp()` })
+      .set({ ...columnsOf(changes), updatedAt: sql`clock_timestamp()` })
       .where(eq(engines.id, id))
       .returning();
     return row;

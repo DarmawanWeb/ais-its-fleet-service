@@ -1,6 +1,10 @@
+import { IsOptionalNotNull } from '@darmawanweb/ais-its-nest/http';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsDefined,
   IsIn,
   IsNumber,
@@ -15,11 +19,15 @@ import {
 
 import type { DdVector } from '@darmawanweb/ais-its-contracts/domain';
 
+import { VESSEL_COUNT_DESCRIPTION } from '../../snapshots/reference-usage.js';
 import type { VesselType } from '../../../domain/vessel.js';
 import {
   CODE_PATTERN,
+  IsCatalogReference,
   IsStrictlyIncreasing,
+  MAX_REFERENCE_IDS,
   PatchType,
+  REFERENCE_IDS_DESCRIPTION,
   trimString,
 } from '../../common/validation.js';
 
@@ -141,6 +149,20 @@ export class CreateVesselTypeDto {
   @IsString()
   @MaxLength(2000)
   readonly source?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: MAX_REFERENCE_IDS,
+    uniqueItems: true,
+    example: ['imo-mepc-353-78', 'imo-mepc-354-78'],
+    description: REFERENCE_IDS_DESCRIPTION,
+  })
+  @IsOptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_REFERENCE_IDS)
+  @ArrayUnique()
+  @IsCatalogReference({ each: true })
+  readonly referenceIds?: string[];
 }
 
 /**
@@ -181,13 +203,29 @@ export class VesselTypeDto {
   @ApiProperty({ type: String, nullable: true })
   readonly source: string | null;
 
+  @ApiProperty({
+    type: [String],
+    example: ['imo-mepc-353-78', 'imo-mepc-354-78'],
+    description:
+      "Ids of the methodology catalog's references behind the values (docs/references/references.json)",
+  })
+  readonly referenceIds: string[];
+
+  @ApiPropertyOptional({
+    type: 'integer',
+    minimum: 0,
+    example: 3,
+    description: VESSEL_COUNT_DESCRIPTION,
+  })
+  readonly vesselCount?: number;
+
   @ApiProperty({ format: 'date-time' })
   readonly createdAt: string;
 
   @ApiProperty({ format: 'date-time' })
   readonly updatedAt: string;
 
-  constructor(type: VesselType) {
+  constructor(type: VesselType, vesselCount?: number) {
     this.id = type.id;
     this.code = type.code;
     this.name = type.name;
@@ -198,7 +236,9 @@ export class VesselTypeDto {
     this.d = { d1: type.d1, d2: type.d2, d3: type.d3, d4: type.d4 };
     this.icon = type.icon;
     this.source = type.source;
+    this.referenceIds = [...type.referenceIds];
     this.createdAt = type.createdAt.toISOString();
     this.updatedAt = type.updatedAt.toISOString();
+    if (vesselCount !== undefined) this.vesselCount = vesselCount;
   }
 }

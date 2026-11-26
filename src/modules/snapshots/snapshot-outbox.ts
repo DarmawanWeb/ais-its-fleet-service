@@ -25,13 +25,13 @@ function* chunks<T>(items: readonly T[], size: number): Generator<T[]> {
 /**
  * Writes VesselSnapshotV1 / VesselDeletedV1 rows into `fleet.outbox` inside
  * the caller's transaction (transactional outbox, spec §13.3): they commit or
- * roll back with the change and `FleetOutboxRelay` publishes them to
+ * roll back with the change and the kit's `OutboxRelay` publishes them to
  * `fleet.vessel.v1.<vesselId>` afterwards.
  *
  * Ordering contract: callers lock the vessel row before enqueueing (an
  * `UPDATE`, `DELETE` or `SELECT … FOR UPDATE/SHARE` of the vessel), so the
- * outbox `seq` of one vessel follows commit order and the relay publishes
- * its snapshots in that order. Database only (the seed CLI uses it too);
+ * outbox `seq` of one vessel follows commit order and the per-key relay
+ * publishes its snapshots in that order. Database only (the seed CLI uses it too);
  * after the commit, callers signal {@link OutboxNotifier}.
  */
 @Injectable()

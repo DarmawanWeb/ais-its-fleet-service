@@ -1,7 +1,11 @@
-import type { Pool } from '@darmawanweb/ais-its-nest/db';
+import {
+  isUniqueViolation,
+  PG_SQLSTATES,
+  type Pool,
+  sqlStateOf,
+} from '@darmawanweb/ais-its-nest/db';
 
 import { type FleetDb, inTransaction } from '../../db/database.js';
-import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import {
   CodeTakenError,
   type FleetResource,
@@ -100,7 +104,7 @@ export async function deleteUnusedReference<T>(
     try {
       return await options.remove(transaction.db);
     } catch (error) {
-      if (isForeignKeyViolation(error)) {
+      if (sqlStateOf(error) === PG_SQLSTATES.FOREIGN_KEY_VIOLATION) {
         throw new ReferenceInUseError(options.resource, options.id, 1);
       }
       throw error;
@@ -110,6 +114,20 @@ export async function deleteUnusedReference<T>(
     throw new ReferenceNotFoundError(options.resource, options.id);
   }
   return deleted;
+}
+
+/**
+ * `true` when `changes` sets one of `embedded`, the members that vessel
+ * snapshots carry: a change of other members only (provenance such as
+ * `source` and `referenceIds`, a type's `icon`, an engine's `code`)
+ * republishes nothing, so annotating reference data does not re-send the
+ * snapshots of every vessel that uses it.
+ */
+export function changesEmbedded<T extends object>(
+  changes: T,
+  embedded: readonly (keyof T)[],
+): boolean {
+  return embedded.some((key) => changes[key] !== undefined);
 }
 
 /** `value` without its `undefined` members (absent and `undefined` mean "keep"; `null` clears). */

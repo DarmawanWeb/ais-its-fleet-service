@@ -1,5 +1,9 @@
 import { InjectConfig } from '@darmawanweb/ais-its-nest';
-import { InjectPool, type Pool } from '@darmawanweb/ais-its-nest/db';
+import {
+  databaseErrorInfo,
+  InjectPool,
+  type Pool,
+} from '@darmawanweb/ais-its-nest/db';
 import {
   type BeforeApplicationShutdown,
   Injectable,
@@ -12,6 +16,14 @@ import { inTransaction } from '../../db/database.js';
 import { OutboxNotifier } from './outbox-notifier.js';
 import { SnapshotOutbox } from './snapshot-outbox.js';
 import { VesselAggregatesRepository } from './vessel-aggregates.repository.js';
+
+/** The driver's message of a database error (never drizzle's bound parameters), else the error's. */
+function messageOf(error: unknown): string {
+  return (
+    databaseErrorInfo(error)?.message ??
+    (error instanceof Error ? error.message : String(error))
+  );
+}
 
 /** Vessels re-enqueued per transaction by a full republish. */
 const REPUBLISH_PAGE_SIZE = 500;
@@ -45,7 +57,7 @@ export class RepublishService
       },
       (error: unknown) => {
         this.logger.error(
-          `Republishing the fleet on boot failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Republishing the fleet on boot failed: ${messageOf(error)}`,
         );
       },
     );

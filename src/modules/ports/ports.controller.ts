@@ -4,7 +4,11 @@ import {
   type Principal,
   RequirePermissions,
 } from '@darmawanweb/ais-its-nest/auth';
-import { ApiPageResponse, bboxOf } from '@darmawanweb/ais-its-nest/http';
+import {
+  ApiPageResponse,
+  bboxOf,
+  UuidParam,
+} from '@darmawanweb/ais-its-nest/http';
 import {
   Body,
   Controller,
@@ -12,7 +16,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Param,
   Patch,
   Post,
   Query,
@@ -27,41 +30,60 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
+import { ReferenceUsage } from '../snapshots/reference-usage.js';
 import {
   CreatePortDto,
   ListPortsQuery,
   PortDto,
   UpdatePortDto,
 } from './dto/port.dto.js';
-import { ID_PIPE } from '../common/params.js';
 import { PortsService } from './ports.service.js';
 
 /** Ports of call with GeoJSON positions: `/api/v2/ports` (spec §13.3). */
 @ApiTags('ports')
 @Controller('ports')
 export class PortsController {
-  constructor(private readonly ports: PortsService) {}
+  constructor(
+    private readonly ports: PortsService,
+    private readonly usage: ReferenceUsage,
+  ) {}
 
   @Get()
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'List ports (optionally inside a bbox)' })
   @ApiPageResponse(PortDto)
-  async list(@Query() query: ListPortsQuery): Promise<Paginated<PortDto>> {
+  async list(
+    @Query() query: ListPortsQuery,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<Paginated<PortDto>> {
     const page = await this.ports.list({
       page: query.page,
       pageSize: query.pageSize,
       search: query.search,
       bbox: bboxOf(query),
     });
-    return { ...page, data: page.data.map((port) => new PortDto(port)) };
+    const counts = await this.usage.countsFor(
+      principal,
+      'port',
+      page.data.map((port) => port.id),
+    );
+    return {
+      ...page,
+      data: page.data.map((port) => new PortDto(port, counts?.of(port.id))),
+    };
   }
 
   @Get(':id')
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a port' })
   @ApiOkResponse({ type: PortDto })
-  async get(@Param('id', ID_PIPE) id: string): Promise<PortDto> {
-    return new PortDto(await this.ports.get(id));
+  async get(
+    @UuidParam() id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<PortDto> {
+    const port = await this.ports.get(id);
+    const counts = await this.usage.countsFor(principal, 'port', [id]);
+    return new PortDto(port, counts?.of(id));
   }
 
   @Post()
@@ -83,7 +105,7 @@ export class PortsController {
   })
   @ApiOkResponse({ type: PortDto })
   async update(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body() body: UpdatePortDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -100,7 +122,7 @@ export class PortsController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

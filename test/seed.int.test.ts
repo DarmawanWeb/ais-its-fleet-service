@@ -100,6 +100,7 @@ describe('pnpm seed: idempotent reference data', () => {
       fuelFormulas: { inserted: 0, updated: 0, unchanged: totals.fuelFormulas },
       ports: { inserted: 0, updated: 0, unchanged: totals.ports },
       republished: 0,
+      referencesLinked: 0,
     });
     const { rows } = await pool.query<{ code: string; count: number }>(
       'SELECT code, count(*)::int AS count FROM vessel_types GROUP BY code HAVING count(*) > 1',
@@ -193,5 +194,27 @@ describe('pnpm seed: idempotent reference data', () => {
       id: diesel.id,
       density: 0.86,
     });
+  });
+  it('links seeded rows to the methodology catalog and restores the ids without republishing', async () => {
+    await seed();
+    const diesel = await seeded('fuels', 'diesel_gas_oil');
+    expect(diesel.referenceIds).toEqual(['imo-mepc-364-79']);
+    expect(
+      (await seeded('vessel-types', 'roro_passenger')).referenceIds,
+    ).toEqual(['imo-mepc-353-78', 'imo-mepc-354-78']);
+    expect((await seeded('engines', 'niigata_6m28bet')).referenceIds).toEqual([
+      'legacy-mvp-backend',
+    ]);
+
+    await pool.query(
+      "UPDATE fuels SET reference_ids = '{}' WHERE code = 'diesel_gas_oil'",
+    );
+    const report = await seed();
+    expect(report.referencesLinked).toBe(1);
+    expect(report.republished).toBe(0);
+    expect(report.fuels.updated).toBe(0);
+    expect((await seeded('fuels', 'diesel_gas_oil')).referenceIds).toEqual([
+      'imo-mepc-364-79',
+    ]);
   });
 });

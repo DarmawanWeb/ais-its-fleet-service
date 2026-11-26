@@ -4,6 +4,7 @@ import { createLogger, loadConfig } from '@darmawanweb/ais-its-nest';
 import {
   createDatabasePool,
   databasePoolSettings,
+  sanitizeError,
 } from '@darmawanweb/ais-its-nest/db';
 
 import { configSchema } from './config.js';
@@ -32,7 +33,8 @@ try {
   );
   logger.info({ report }, 'Reference data seeded');
 } catch (error) {
-  logger.error({ err: error }, 'Seeding failed');
+  // Without the bound values of a failed statement (spec §10).
+  logger.error({ err: sanitizeError(error) }, 'Seeding failed');
   process.exitCode = 1;
 } finally {
   await pool.end();

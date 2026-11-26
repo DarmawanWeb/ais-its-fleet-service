@@ -1,9 +1,9 @@
 import { ValidationFailedError } from '@darmawanweb/ais-its-nest';
+import { PG_SQLSTATES } from '@darmawanweb/ais-its-nest/db';
 import type { CallHandler, ExecutionContext } from '@nestjs/common';
 import { lastValueFrom, of, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { PG_NOT_NULL_VIOLATION } from '../../db/errors.js';
 import {
   camelCaseColumn,
   NotNullViolationInterceptor,
@@ -19,8 +19,10 @@ describe('NotNullViolationInterceptor', () => {
   const interceptor = new NotNullViolationInterceptor();
 
   it('answers a NOT NULL violation as 400 VALIDATION_FAILED on the field', async () => {
+    // As pg's DatabaseError carries it (severity, code, column).
     const driver = Object.assign(new Error('null value in column'), {
-      code: PG_NOT_NULL_VIOLATION,
+      severity: 'ERROR',
+      code: PG_SQLSTATES.NOT_NULL_VIOLATION,
       column: 'annual_voyage_percentage',
     });
     const wrapped = new Error('Failed query', { cause: driver });

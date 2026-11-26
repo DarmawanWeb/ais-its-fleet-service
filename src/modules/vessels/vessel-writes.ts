@@ -1,11 +1,7 @@
 import { ConflictError } from '@darmawanweb/ais-its-nest';
+import { databaseErrorInfo, PG_SQLSTATES } from '@darmawanweb/ais-its-nest/db';
 
 import type { FleetDb } from '../../db/database.js';
-import {
-  PG_FOREIGN_KEY_VIOLATION,
-  PG_UNIQUE_VIOLATION,
-  pgErrorOf,
-} from '../../db/errors.js';
 import {
   type TenantPrincipal,
   ownsVessel,
@@ -49,8 +45,8 @@ export function vesselWriteError(
   error: unknown,
   input: VesselWriteInput,
 ): unknown {
-  const pg = pgErrorOf(error);
-  if (pg?.code === PG_UNIQUE_VIOLATION) {
+  const pg = databaseErrorInfo(error);
+  if (pg?.code === PG_SQLSTATES.UNIQUE_VIOLATION) {
     switch (pg.constraint) {
       case 'vessels_mmsi_key':
         return new MmsiTakenError(input.mmsi ?? 0, error);
@@ -70,7 +66,10 @@ export function vesselWriteError(
         return error;
     }
   }
-  if (pg?.code === PG_FOREIGN_KEY_VIOLATION && pg.constraint !== undefined) {
+  if (
+    pg?.code === PG_SQLSTATES.FOREIGN_KEY_VIOLATION &&
+    pg.constraint !== undefined
+  ) {
     const field = FOREIGN_KEY_FIELDS[pg.constraint];
     if (field !== undefined)
       return invalidField(field[0], field[1], 'notFound');

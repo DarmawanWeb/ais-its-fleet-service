@@ -1,21 +1,20 @@
+import {
+  isValidMmsi,
+  validateFuelFormula,
+} from '@darmawanweb/ais-its-contracts/domain';
+import { getReference } from '@darmawanweb/ais-its-contracts/references';
 import { PageQueryDto } from '@darmawanweb/ais-its-nest/http';
 import type { Type as ClassType } from '@nestjs/common';
 import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { Transform, type TransformFnParams, Type } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 import {
-  IsInt,
   IsOptional,
   IsString,
   Length,
-  Max,
-  Min,
   registerDecorator,
-  ValidateIf,
   type ValidationArguments,
   type ValidationOptions,
 } from 'class-validator';
-
-import { checkFuelFormula } from '../../domain/fuel-formula.js';
 
 /** Codes of reference rows: lowercase snake case, e.g. `bulk_carrier_279k_plus`. */
 export const CODE_PATTERN = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
@@ -33,8 +32,13 @@ export function upperTrimString(params: TransformFnParams): unknown {
 }
 
 /**
- * Validates a first-fuel-formula string against the safe grammar of
- * `domain/fuel-formula.ts`; the message names the problem and its position.
+ * Validates a first-fuel-formula string against the safe grammar shared with
+ * the emission service (contracts `validateFuelFormula`, default
+ * `FUEL_FORMULA_LIMITS`: 500 characters, depth 32, 500 tokens, finite
+ * literals): emission evaluates the strings stored here, so nothing outside
+ * the grammar is written. The message names the problem and its position.
+ *
+ * @method fuel.first_formula
  */
 export function IsFuelFormula(options?: ValidationOptions): PropertyDecorator {
   return (target: object, propertyName: string | symbol) => {
@@ -45,15 +49,15 @@ export function IsFuelFormula(options?: ValidationOptions): PropertyDecorator {
       ...(options === undefined ? {} : { options }),
       validator: {
         validate: (value: unknown) =>
-          typeof value === 'string' && checkFuelFormula(value).valid,
+          typeof value === 'string' && validateFuelFormula(value).valid,
         defaultMessage: (args: ValidationArguments) => {
           const value: unknown = args.value;
           if (typeof value !== 'string')
             return `${args.property} must be a string`;
-          const check = checkFuelFormula(value);
+          const check = validateFuelFormula(value);
           return check.valid
             ? `${args.property} is valid`
-            : `${args.property} is not a safe fuel formula: ${check.message}`;
+            : `${args.property} is not a safe fuel formula: ${check.errors[0].message}`;
         },
       },
     });
@@ -93,6 +97,85 @@ export function IsStrictlyIncreasing(
   };
 }
 
+/**
+ * A comma-separated query value as its trimmed items (`a,b` or a repeated
+ * parameter `?x=a&x=b`); other values pass unchanged.
+ */
+export function splitList(params: TransformFnParams): unknown {
+  const input: unknown = params.value;
+  const parts = Array.isArray(input) ? input : [input];
+  if (!parts.every((part): part is string => typeof part === 'string'))
+    return input;
+  return parts.flatMap((part) => part.split(',')).map((part) => part.trim());
+}
+
+/** Nine decimal digits forming an MMSI (no sign, exponent, prefix or spaces). */
+const MMSI_TEXT = /^\d{9}$/;
+
+/**
+ * A list of 1–`max` MMSIs as nine-digit strings (after {@link splitList}),
+ * each a valid MMSI (contracts `isValidMmsi`): `0525005223`, `52500522` or
+ * `5250052e2` are refused, never converted.
+ */
+export function IsMmsiList(
+  max: number,
+  options?: ValidationOptions,
+): PropertyDecorator {
+  return (target: object, propertyName: string | symbol) => {
+    registerDecorator({
+      name: 'isMmsiList',
+      target: target.constructor,
+      propertyName: String(propertyName),
+      ...(options === undefined ? {} : { options }),
+      validator: {
+        validate: (value: unknown) =>
+          Array.isArray(value) &&
+          value.length >= 1 &&
+          value.length <= max &&
+          value.every(
+            (item) =>
+              typeof item === 'string' &&
+              MMSI_TEXT.test(item) &&
+              isValidMmsi(Number(item)),
+          ),
+        defaultMessage: (args: ValidationArguments) =>
+          `${args.property} must be a comma-separated list of 1–${max} nine-digit MMSIs`,
+      },
+    });
+  };
+}
+
+/** Most reference ids one reference row cites (also a CHECK in the tables). */
+export const MAX_REFERENCE_IDS = 20;
+
+/** OpenAPI description of `referenceIds`. */
+export const REFERENCE_IDS_DESCRIPTION =
+  "Ids of the methodology catalog's references (docs/references/references.json, contracts REFERENCES) behind the values, next to the free-text `source`; " +
+  `unique, at most ${MAX_REFERENCE_IDS}, each a reference of the catalog this service ships (else 400 VALIDATION_FAILED). [] clears them, null is refused.`;
+
+/**
+ * An id of the methodology catalog's references (contracts `getReference`):
+ * validate arrays with `{ each: true }`.
+ */
+export function IsCatalogReference(
+  options?: ValidationOptions,
+): PropertyDecorator {
+  return (target: object, propertyName: string | symbol) => {
+    registerDecorator({
+      name: 'isCatalogReference',
+      target: target.constructor,
+      propertyName: String(propertyName),
+      ...(options === undefined ? {} : { options }),
+      validator: {
+        validate: (value: unknown) =>
+          typeof value === 'string' && getReference(value) !== undefined,
+        defaultMessage: (args: ValidationArguments) =>
+          `${args.property} must hold ids of the methodology catalog's references (unknown: ${JSON.stringify(args.value)})`,
+      },
+    });
+  };
+}
+
 /** `[longitude, latitude]` in WGS 84 degrees. */
 export function IsLonLat(options?: ValidationOptions): PropertyDecorator {
   return (target: object, propertyName: string | symbol) => {
@@ -119,21 +202,6 @@ export function IsLonLat(options?: ValidationOptions): PropertyDecorator {
 }
 
 /**
- * A member that may be absent but is never `null` (a NOT NULL column):
- * validation is skipped only when the value is `undefined`, so `null` fails
- * the member's other validators with `400 VALIDATION_FAILED`.
- * `@IsOptional()` skips `null` as well — use it only for nullable members.
- */
-export function IsOptionalNonNull(
-  options?: ValidationOptions,
-): PropertyDecorator {
-  return ValidateIf(
-    (_object: object, value: unknown) => value !== undefined,
-    options,
-  );
-}
-
-/**
  * `PartialType` for PATCH bodies: every member of `classRef` becomes
  * optional, but a member that is present is validated, `null` included.
  * `null` therefore passes only for members the create DTO marks
@@ -147,34 +215,10 @@ export function PatchType<T>(classRef: ClassType<T>): ClassType<Partial<T>> {
 }
 
 /**
- * Highest accepted `page`: keeps `(page − 1) · pageSize` far inside the
- * range of a PostgreSQL `bigint` OFFSET (the kit's `PageQueryDto` has no
- * upper bound, so a huge page was a `500` instead of a `400`).
+ * Query of the reference-data lists: the kit's page query (`page`
+ * 1–`MAX_PAGE`, `pageSize` 1–100) + case-insensitive name/code search.
  */
-export const MAX_PAGE = 1_000_000;
-
-/**
- * The kit's page query (`page` ≥ 1, `pageSize` 1–100) with `page` ≤
- * {@link MAX_PAGE}; base of every page-based list of the service.
- */
-export class BoundedPageQueryDto extends PageQueryDto {
-  // Re-declares every validator of `page`: class-validator replaces the
-  // inherited constraints of a member that the subclass decorates.
-  @ApiPropertyOptional({
-    minimum: 1,
-    maximum: MAX_PAGE,
-    default: 1,
-    type: 'integer',
-  })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(MAX_PAGE)
-  override readonly page: number = 1;
-}
-
-/** Query of the reference-data lists: page + case-insensitive name/code search. */
-export class ReferenceListQuery extends BoundedPageQueryDto {
+export class ReferenceListQuery extends PageQueryDto {
   @ApiPropertyOptional({
     description: 'Case-insensitive substring of the name or code',
     maxLength: 120,

@@ -4,7 +4,7 @@ import {
   type Principal,
   RequirePermissions,
 } from '@darmawanweb/ais-its-nest/auth';
-import { ApiPageResponse } from '@darmawanweb/ais-its-nest/http';
+import { ApiPageResponse, UuidParam } from '@darmawanweb/ais-its-nest/http';
 import {
   Body,
   Controller,
@@ -12,7 +12,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Param,
   Patch,
   Post,
   Query,
@@ -27,8 +26,8 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
-import { ID_PIPE } from '../common/params.js';
 import { ReferenceListQuery } from '../common/validation.js';
+import { ReferenceUsage } from '../snapshots/reference-usage.js';
 import { CreateFuelDto, FuelDto, UpdateFuelDto } from './dto/fuel.dto.js';
 import { FuelsService } from './fuels.service.js';
 
@@ -36,23 +35,42 @@ import { FuelsService } from './fuels.service.js';
 @ApiTags('fuels')
 @Controller('fuels')
 export class FuelsController {
-  constructor(private readonly fuels: FuelsService) {}
+  constructor(
+    private readonly fuels: FuelsService,
+    private readonly usage: ReferenceUsage,
+  ) {}
 
   @Get()
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'List fuels (Cf, carbon content, density)' })
   @ApiPageResponse(FuelDto)
-  async list(@Query() query: ReferenceListQuery): Promise<Paginated<FuelDto>> {
+  async list(
+    @Query() query: ReferenceListQuery,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<Paginated<FuelDto>> {
     const page = await this.fuels.list(query);
-    return { ...page, data: page.data.map((fuel) => new FuelDto(fuel)) };
+    const counts = await this.usage.countsFor(
+      principal,
+      'fuel',
+      page.data.map((fuel) => fuel.id),
+    );
+    return {
+      ...page,
+      data: page.data.map((fuel) => new FuelDto(fuel, counts?.of(fuel.id))),
+    };
   }
 
   @Get(':id')
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a fuel' })
   @ApiOkResponse({ type: FuelDto })
-  async get(@Param('id', ID_PIPE) id: string): Promise<FuelDto> {
-    return new FuelDto(await this.fuels.get(id));
+  async get(
+    @UuidParam() id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<FuelDto> {
+    const fuel = await this.fuels.get(id);
+    const counts = await this.usage.countsFor(principal, 'fuel', [id]);
+    return new FuelDto(fuel, counts?.of(id));
   }
 
   @Post()
@@ -76,7 +94,7 @@ export class FuelsController {
   })
   @ApiOkResponse({ type: FuelDto })
   async update(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body() body: UpdateFuelDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -93,7 +111,7 @@ export class FuelsController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

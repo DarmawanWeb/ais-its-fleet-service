@@ -4,7 +4,7 @@ import {
   type Principal,
   RequirePermissions,
 } from '@darmawanweb/ais-its-nest/auth';
-import { ApiPageResponse } from '@darmawanweb/ais-its-nest/http';
+import { ApiPageResponse, UuidParam } from '@darmawanweb/ais-its-nest/http';
 import {
   Body,
   Controller,
@@ -12,7 +12,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Param,
   Patch,
   Post,
   Query,
@@ -27,8 +26,8 @@ import {
 } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
-import { ID_PIPE } from '../common/params.js';
 import { ReferenceListQuery } from '../common/validation.js';
+import { ReferenceUsage } from '../snapshots/reference-usage.js';
 import {
   CreateVesselTypeDto,
   UpdateVesselTypeDto,
@@ -40,7 +39,10 @@ import { VesselTypesService } from './vessel-types.service.js';
 @ApiTags('vessel-types')
 @Controller('vessel-types')
 export class VesselTypesController {
-  constructor(private readonly types: VesselTypesService) {}
+  constructor(
+    private readonly types: VesselTypesService,
+    private readonly usage: ReferenceUsage,
+  ) {}
 
   @Get()
   @RequirePermissions('vessel:read')
@@ -50,17 +52,33 @@ export class VesselTypesController {
   @ApiPageResponse(VesselTypeDto)
   async list(
     @Query() query: ReferenceListQuery,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<Paginated<VesselTypeDto>> {
     const page = await this.types.list(query);
-    return { ...page, data: page.data.map((type) => new VesselTypeDto(type)) };
+    const counts = await this.usage.countsFor(
+      principal,
+      'vesselType',
+      page.data.map((type) => type.id),
+    );
+    return {
+      ...page,
+      data: page.data.map(
+        (type) => new VesselTypeDto(type, counts?.of(type.id)),
+      ),
+    };
   }
 
   @Get(':id')
   @RequirePermissions('vessel:read')
   @ApiOperation({ summary: 'Get a ship type' })
   @ApiOkResponse({ type: VesselTypeDto })
-  async get(@Param('id', ID_PIPE) id: string): Promise<VesselTypeDto> {
-    return new VesselTypeDto(await this.types.get(id));
+  async get(
+    @UuidParam() id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<VesselTypeDto> {
+    const type = await this.types.get(id);
+    const counts = await this.usage.countsFor(principal, 'vesselType', [id]);
+    return new VesselTypeDto(type, counts?.of(id));
   }
 
   @Post()
@@ -84,7 +102,7 @@ export class VesselTypesController {
   })
   @ApiOkResponse({ type: VesselTypeDto })
   async update(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @Body() body: UpdateVesselTypeDto,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
@@ -101,7 +119,7 @@ export class VesselTypesController {
   })
   @ApiNoContentResponse()
   async remove(
-    @Param('id', ID_PIPE) id: string,
+    @UuidParam() id: string,
     @CurrentPrincipal() principal: Principal,
     @Req() request: FastifyRequest,
   ): Promise<void> {

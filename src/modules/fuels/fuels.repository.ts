@@ -15,6 +15,14 @@ export type FuelChanges = Partial<Omit<NewFuel, 'id'>>;
 /** Name of the unique constraint on `code`. */
 export const FUEL_CODE_CONSTRAINT = 'fuels_code_key';
 
+/** `changes` with `referenceIds` copied into the mutable array drizzle writes. */
+function columnsOf(changes: FuelChanges) {
+  const { referenceIds, ...columns } = changes;
+  return referenceIds === undefined
+    ? columns
+    : { ...columns, referenceIds: [...referenceIds] };
+}
+
 /** Drizzle access to `fuels`. */
 @Injectable()
 export class FuelsRepository {
@@ -53,7 +61,10 @@ export class FuelsRepository {
   }
 
   async insert(db: FleetDb, fuel: NewFuel): Promise<Fuel> {
-    const [row] = await db.insert(fuels).values(fuel).returning();
+    const [row] = await db
+      .insert(fuels)
+      .values({ ...fuel, referenceIds: [...fuel.referenceIds] })
+      .returning();
     if (row === undefined)
       throw new Error('INSERT … RETURNING returned no row');
     return row;
@@ -67,7 +78,7 @@ export class FuelsRepository {
   ): Promise<Fuel | undefined> {
     const [row] = await db
       .update(fuels)
-      .set({ ...changes, updatedAt: sql`clock_timestamp()` })
+      .set({ ...columnsOf(changes), updatedAt: sql`clock_timestamp()` })
       .where(eq(fuels.id, id))
       .returning();
     return row;
